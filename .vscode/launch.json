@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:owati}",
+            "name": "Debug owati",
+            "target": "owati",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug owati"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:owati}",
+            "name": "Release owati",
+            "target": "owati",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release owati"
+        }
+    ]
+}
