@@ -1,0 +1,58 @@
+import SwiftUI
+import Combine
+
+// 全局配置 存 UserDefaults
+final class AppConfig: ObservableObject {
+    static let shared = AppConfig()
+
+    private let ud = UserDefaults.standard
+
+    // 每日喝水目标 ml
+    @Published var dailyGoalML: Int {
+        didSet { ud.set(dailyGoalML, forKey: "dailyGoalML") }
+    }
+    // 提醒间隔 分钟
+    @Published var remindIntervalMin: Int {
+        didSet { ud.set(remindIntervalMin, forKey: "remindIntervalMin") }
+    }
+    // 提醒日 1=周日 2=周一 ... 7=周六
+    @Published var remindDays: Set<Int> {
+        didSet { ud.set(Array(remindDays), forKey: "remindDays") }
+    }
+    // 提醒时间段 开始/结束 "09:00" "19:00"
+    @Published var remindStart: String {
+        didSet { ud.set(remindStart, forKey: "remindStart") }
+    }
+    @Published var remindEnd: String {
+        didSet { ud.set(remindEnd, forKey: "remindEnd") }
+    }
+    // 休息时间 段内不提醒(如午休)
+    @Published var restEnabled: Bool {
+        didSet { ud.set(restEnabled, forKey: "restEnabled") }
+    }
+    @Published var restStart: String {
+        didSet { ud.set(restStart, forKey: "restStart") }
+    }
+    @Published var restEnd: String {
+        didSet { ud.set(restEnd, forKey: "restEnd") }
+    }
+    // 引导是否完成
+    @Published var didOnboarding: Bool {
+        didSet { ud.set(didOnboarding, forKey: "didOnboarding") }
+    }
+
+    private init() {
+        let d = UserDefaults.standard
+        dailyGoalML = d.object(forKey: "dailyGoalML") as? Int ?? 2000
+        remindIntervalMin = d.object(forKey: "remindIntervalMin") as? Int ?? 45
+        remindDays = Set(d.object(forKey: "remindDays") as? [Int] ?? [2, 3, 4, 5, 6])
+        remindStart = d.string(forKey: "remindStart") ?? "09:00"
+        remindEnd = d.string(forKey: "remindEnd") ?? "19:00"
+        restEnabled = d.object(forKey: "restEnabled") as? Bool ?? true
+        restStart = d.string(forKey: "restStart") ?? "12:00"
+        restEnd = d.string(forKey: "restEnd") ?? "13:00"
+        didOnboarding = d.bool(forKey: "didOnboarding")
+        // 兜底 空的提醒日回落到工作日
+        if remindDays.isEmpty { remindDays = [2, 3, 4, 5, 6] }
+    }
+}
