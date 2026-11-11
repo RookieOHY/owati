@@ -5,7 +5,7 @@ final class OnboardingState: ObservableObject {
     @Published var step = 0
 }
 
-// 四步设置向导 参考HealthTick 蓝色主题
+// 四步设置向导 蓝色主题
 struct OnboardingView: View {
     @ObservedObject var config = AppConfig.shared
     @ObservedObject var state = OnboardingState()

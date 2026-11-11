@@ -13,9 +13,10 @@ final class PanelState: ObservableObject {
 struct PanelView: View {
     @ObservedObject var state = PanelState.shared
     @ObservedObject var config = AppConfig.shared
+    private let db = Database.shared
 
-    // 假数据 喝水量 之后接喝水记录
-    private let consumedML = 1080.0
+    // 今日已喝 真数据 来自SQLite
+    private var consumedML: Double { Double(db.todayTotalML()) }
 
     static let dayFormat: DateFormatter = {
         let f = DateFormatter()
@@ -42,73 +43,173 @@ struct PanelView: View {
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
-                Spacer()
-                // 圆形进度
-                WaveRing(progress: consumedML / Double(config.dailyGoalML),
-                         consumedML: consumedML, goalML: config.dailyGoalML)
-                Spacer()
+                // 圆环 + 环下三列数据
+                VStack(spacing: 12) {
+                    WaveRing(progress: consumedML / Double(config.dailyGoalML),
+                             consumedML: consumedML, goalML: config.dailyGoalML)
+                    // 三列数据
+                    HStack(spacing: 0) {
+                        statCol("\(db.todayCups()) 杯", "杯数")
+                        statCol("\(db.streakDays(goalML: config.dailyGoalML)) 天", "连续")
+                        statCol(db.lastDrinkText() ?? "—", "距上次")
+                    }
+                    statusLine
+                    weekDrops
+                }
                 // 两张卡
                 HStack(spacing: 10) {
                     remainCard
                     remindCard(ctx.date)
                 }
-                // 底部 按钮 + 分隔线 + 退出 参考HealthTick的排法
+                // 底部 分隔线 + 按钮排
                 VStack(spacing: 14) {
-                    Button(action: { OwatiApp.showOnboarding() }) {
-                        VStack(spacing: 2) {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 13))
-                            Text("设置")
-                                .font(.system(size: 9))
-                        }
-                        .frame(width: 36, height: 32)
-                        .foregroundColor(.primary.opacity(0.5))
-                    }
-                    .buttonStyle(.plain)
                     Divider().padding(.horizontal, 4)
-                    Button { NSApp.terminate(nil) } label: {
-                        Text("退出 owati")
-                            .font(.caption)
-                            .foregroundColor(.primary.opacity(0.75))
-                            .frame(maxWidth: .infinity)
+                    HStack(spacing: 0) {
+                        controlButton("统计", "chart.xyaxis.line", "1") { /* 统计页后续做 */ }
+                        controlButton("成就", "trophy", "2") { /* 成就页后续做 */ }
+                        controlButton("帮助", "questionmark.circle", "3") { /* 帮助页后续做 */ }
+                        controlButton("设置", "gear", "4") { OwatiApp.showOnboarding() }
+                        controlButton("退出", "power", "q") { NSApp.terminate(nil) }
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 14)
             .padding(.top, 16)
             .padding(.bottom, 14)
         }
-        .frame(width: 240, height: 380)
+        // 宽度固定 高度随内容自动撑 定高会在内容变化时把上下裁掉
+        .frame(width: 240)
+    }
+
+    // 底栏按钮 图标+小字
+    func controlButton(_ title: String, _ icon: String, _ key: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                Text(title)
+                    .font(.system(size: 9))
+            }
+            .frame(width: 36, height: 32)
+            .foregroundColor(.primary.opacity(0.5))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(KeyEquivalent(key.first!), modifiers: .command)
+        .frame(maxWidth: .infinity)
+    }
+
+    // 三列数据列 数值带单位+名词标签
+    func statCol(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 13, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(.primary)
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // 状态行 随进度换文案 图标点题
+    var statusLine: some View {
+        let cups = db.todayCups()
+        let consumed = Int(consumedML)
+        let goal = config.dailyGoalML
+        return HStack(spacing: 5) {
+            if cups == 0 {
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Text("来第一杯水，开启今天")
+                    .foregroundColor(.secondary)
+            } else if consumed >= goal {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(.accentColor)
+                Text("今日目标已达成，连续 \(db.streakDays(goalML: goal)) 天")
+                    .foregroundColor(.secondary)
+            } else {
+                Image(systemName: "target")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Text("离 今日目标 还差 ")
+                    .foregroundColor(.secondary)
+                Text("\(goal - consumed) ml")
+                    .fontWeight(.semibold)
+                    .foregroundColor(.accentColor)
+            }
+        }
+        .font(.system(size: 12))
+    }
+
+    // 本周水滴 一天一滴 滴内是当天杯数 滴下是几号 周一开头
+    var weekDrops: some View {
+        let cal = Calendar(identifier: .iso8601) // 周一为一周开始
+        let weekStart = cal.dateInterval(of: .weekOfYear, for: Date())!.start
+        let days = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: weekStart) }
+        let counts = db.cupsByDate(dates: days.map { Database.dayFormat.string(from: $0) })
+        return HStack(spacing: 5) {
+            ForEach(Array(days.enumerated()), id: \.offset) { pair in
+                let d = pair.element
+                let isToday = cal.isDateInToday(d)
+                let n = counts[Database.dayFormat.string(from: d), default: 0]
+                VStack(spacing: 4) {
+                    ZStack {
+                        Image(systemName: "drop.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(isToday ? AnyShapeStyle(Color.accentColor)
+                                                      : AnyShapeStyle(Color.primary.opacity(0.12)))
+                        if n > 0 {
+                            Text("\(n)")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(isToday ? .white : .primary.opacity(0.6))
+                                .offset(y: -1)
+                        }
+                    }
+                    VStack(spacing: 2) {
+                        Text("\(Calendar.current.component(.day, from: d))")
+                            .font(.system(size: 9))
+                            .foregroundColor(isToday ? Color.accentColor : .secondary)
+                        // 今天的号下面一条小蓝线
+                        Capsule()
+                            .fill(isToday ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.clear))
+                            .frame(width: 8, height: 2)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
     }
 
     // 左卡 剩余量 点击换单位
     var remainCard: some View {
         let remain = Double(config.dailyGoalML) - consumedML
-        return panelCard("剩余", remainText(remain))
+        return panelCard("剩余水量", remainText(remain))
             .onTapGesture { state.unitIndex = (state.unitIndex + 1) % 3 }
     }
 
-    // 右卡 下次提醒 点击切倒计时
+    // 右卡 下次提醒 点击切倒计时 标签跟着变
     func remindCard(_ now: Date) -> some View {
-        panelCard("下次提醒", remindText(now))
+        panelCard(state.showCountdown ? "倒计时" : "下次提醒", remindText(now))
             .onTapGesture { state.showCountdown.toggle() }
     }
 
     func panelCard(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .center, spacing: 3) {
             Text(title)
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundColor(.secondary)
             Text(value)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
                 .foregroundColor(.primary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
 
     // 剩余文案 ml / L / 升 轮换
@@ -123,7 +224,7 @@ struct PanelView: View {
     // 提醒文案 时刻 / 倒计时
     func remindText(_ now: Date) -> String {
         guard state.showCountdown else {
-            return " \(Self.timeFormat.string(from: state.nextRemind))"
+            return Self.timeFormat.string(from: state.nextRemind)
         }
         let s = max(0, Int(state.nextRemind.timeIntervalSince(now)))
         return String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
@@ -154,7 +255,7 @@ struct WaveRing: View {
                     .rotationEffect(.degrees(-90)) // 从正上方起笔
             }
             .padding(3)
-            // 波浪 双层 一深一浅错开动 (实现思路参考 MIT 库 SwiftUI-Motion-Library 的 LiquidFillText)
+            // 波浪 双层 一深一浅错开动
             TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 ZStack {
