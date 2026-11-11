@@ -85,11 +85,16 @@ final class Database {
 
     // 当日目标覆盖 只影响这一天 没设过返回nil
     func todayGoalOverride() -> Int? {
+        goalOverride(on: Self.dayFormat.string(from: Date()))
+    }
+
+    // 某天目标覆盖 分享卡回看历史用
+    func goalOverride(on date: String) -> Int? {
         var stmt: OpaquePointer?
         let sql = "SELECT goal_ml FROM goal_overrides WHERE date = ?"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_text(stmt, 1, Self.dayFormat.string(from: Date()), -1, transient)
+        sqlite3_bind_text(stmt, 1, date, -1, transient)
         guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
         return Int(sqlite3_column_int64(stmt, 0))
     }
@@ -113,6 +118,11 @@ final class Database {
 
     // 连续达标天数 今天没达标不算断 从昨天继续数
     func streakDays(goalML: Int) -> Int {
+        streakDays(on: Self.dayFormat.string(from: Date()), goalML: goalML)
+    }
+
+    // 连续达标天数(截至某天) 向前回溯 该天没达标不算断
+    func streakDays(on target: String, goalML: Int) -> Int {
         var stmt: OpaquePointer?
         let sql = """
             SELECT date, SUM(amount_ml) FROM drink_records
@@ -121,25 +131,37 @@ final class Database {
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
         defer { sqlite3_finalize(stmt) }
         let cal = Calendar.current
-        let today = Self.dayFormat.string(from: Date())
         var streak = 0
         var prevDate: Date?
         while sqlite3_step(stmt) == SQLITE_ROW {
             let dateStr = String(cString: sqlite3_column_text(stmt, 0))
             let total = Int(sqlite3_column_int64(stmt, 1))
+            // 目标日期之前的记录不看
+            if dateStr > target { continue }
             guard let day = Self.dayFormat.date(from: dateStr) else { break }
             // 日期断档 连不上就断
             if let prev = prevDate, cal.dateComponents([.day], from: day, to: prev).day != 1 { break }
             prevDate = day
             if total >= goalML {
                 streak += 1
-            } else if dateStr == today {
-                continue
+            } else if dateStr == target {
+                continue // 截至日当天没达标不算断
             } else {
                 break
             }
+            if dateStr == target { break } // 数到目标日为止
         }
         return streak
+    }
+
+    // 全库累计喝水总量 分享卡用
+    func totalAllML() -> Int {
+        queryInt("SELECT COALESCE(SUM(amount_ml), 0) FROM drink_records", [])
+    }
+
+    // 某天杯数
+    func cups(on date: String) -> Int {
+        queryInt("SELECT COUNT(*) FROM drink_records WHERE date = ?", [date])
     }
 
     // 距最近一次喝水 文案化 没记录返回nil 超过一天也算没喝

@@ -142,10 +142,137 @@ struct PanelView: View {
         .onChange(of: state.panelHeight) { _ in syncWindowHeight() }
     }
 
-    // 分享按钮 右上角 逻辑后续做
+    // 圆角矩形轮廓 从顶部中央起笔顺时针 point(in:t:) 按周长等比取点 供刻度/动点定位
+    struct RoundedRectOutlineShape: Shape {
+        var radius: CGFloat
+
+        nonisolated func path(in rect: CGRect) -> Path {
+            Self.path(in: rect, radius: radius)
+        }
+
+        static func path(in rect: CGRect, radius: CGFloat) -> Path {
+            let r = min(radius, rect.width / 2, rect.height / 2)
+            var p = Path()
+            p.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+            p.addArc(center: CGPoint(x: rect.maxX - r, y: rect.minY + r), radius: r,
+                     startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+            p.addArc(center: CGPoint(x: rect.maxX - r, y: rect.maxY - r), radius: r,
+                     startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+            p.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+            p.addArc(center: CGPoint(x: rect.minX + r, y: rect.maxY - r), radius: r,
+                     startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+            p.addArc(center: CGPoint(x: rect.minX + r, y: rect.minY + r), radius: r,
+                     startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+            p.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+            return p
+        }
+
+        // 圆角矩形部分路径 与 point() 同一套数学 from/to按周长等比
+        struct RoundedRectPartialShape: Shape {
+            var from: Double
+            var to: Double
+            var radius: CGFloat
+
+            nonisolated var animatableData: AnimatablePair<Double, Double> {
+                get { AnimatablePair(from, to) }
+                set { from = newValue.first; to = newValue.second }
+            }
+
+            nonisolated func path(in rect: CGRect) -> Path {
+                let r = min(radius, rect.width / 2, rect.height / 2)
+                let topHalf = Double((rect.maxX - r) - rect.midX)
+                let arcLen = Double.pi * Double(r) / 2
+                let rightEdge = Double((rect.maxY - r) - (rect.minY + r))
+                let bottomEdge = Double((rect.maxX - r) - (rect.minX + r))
+                let perimeter = 2 * (topHalf + arcLen + rightEdge + arcLen + bottomEdge)
+                let d0 = max(0, min(from, 1)) * perimeter
+                let d1 = max(0, min(to, 1)) * perimeter
+                var p = Path()
+                guard d1 > d0 else { return p }
+                var first = true
+                func at(_ d: Double) -> CGPoint { RoundedRectOutlineShape.point(in: rect, t: d / perimeter, radius: r) }
+                func moveTo(_ d: Double) {
+                    if first { p.move(to: at(d)); first = false }
+                }
+                func arc(_ center: CGPoint, _ deg0: Double, _ deg1: Double) {
+                    p.addArc(center: center, radius: r,
+                             startAngle: .degrees(deg0), endAngle: .degrees(deg1), clockwise: false)
+                }
+                var a = 0.0
+                var ov = min(d1, a + topHalf) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); p.addLine(to: at(min(d1, a + topHalf))) }
+                a += topHalf
+                let trC = CGPoint(x: rect.maxX - CGFloat(r), y: rect.minY + CGFloat(r))
+                ov = min(d1, a + arcLen) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); arc(trC, -90 + (max(d0, a) - a) / arcLen * 90, -90 + (min(d1, a + arcLen) - a) / arcLen * 90) }
+                a += arcLen
+                ov = min(d1, a + rightEdge) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); p.addLine(to: at(min(d1, a + rightEdge))) }
+                a += rightEdge
+                let brC = CGPoint(x: rect.maxX - CGFloat(r), y: rect.maxY - CGFloat(r))
+                ov = min(d1, a + arcLen) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); arc(brC, (max(d0, a) - a) / arcLen * 90, (min(d1, a + arcLen) - a) / arcLen * 90) }
+                a += arcLen
+                ov = min(d1, a + bottomEdge) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); p.addLine(to: at(min(d1, a + bottomEdge))) }
+                a += bottomEdge
+                let blC = CGPoint(x: rect.minX + CGFloat(r), y: rect.maxY - CGFloat(r))
+                ov = min(d1, a + arcLen) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); arc(blC, 90 + (max(d0, a) - a) / arcLen * 90, 90 + (min(d1, a + arcLen) - a) / arcLen * 90) }
+                a += arcLen
+                ov = min(d1, a + rightEdge) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); p.addLine(to: at(min(d1, a + rightEdge))) }
+                a += rightEdge
+                let tlC = CGPoint(x: rect.minX + CGFloat(r), y: rect.minY + CGFloat(r))
+                ov = min(d1, a + arcLen) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); arc(tlC, 180 + (max(d0, a) - a) / arcLen * 90, 180 + (min(d1, a + arcLen) - a) / arcLen * 90) }
+                a += arcLen
+                ov = min(d1, a + topHalf) - max(d0, a)
+                if ov > 0 { moveTo(max(d0, a)); p.addLine(to: at(min(d1, a + topHalf))) }
+                return p
+            }
+        }
+
+        // 周长等比取点 t∈[0,1] 与 trim 的起点对齐
+        static func point(in rect: CGRect, t: Double, radius: CGFloat) -> CGPoint {
+            let r = min(radius, rect.width / 2, rect.height / 2)
+            let topHalf = (rect.maxX - r) - rect.midX
+            let arc = .pi * r / 2
+            let rightEdge = (rect.maxY - r) - (rect.minY + r)
+            let bottomEdge = (rect.maxX - r) - (rect.minX + r)
+            let perimeter = 2 * (topHalf + arc + rightEdge + arc + bottomEdge)
+            var d = max(0, min(t, 1)) * perimeter
+            func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { .init(x: x, y: y) }
+            func arcPt(_ cx: CGFloat, _ cy: CGFloat, _ deg: Double) -> CGPoint {
+                pt(cx + r * CGFloat(cos(deg * .pi / 180)), cy + r * CGFloat(sin(deg * .pi / 180)))
+            }
+            if d <= topHalf { return pt(rect.midX + CGFloat(d), rect.minY) }
+            d -= topHalf
+            if d <= arc { return arcPt(rect.maxX - r, rect.minY + r, -90 + d / arc * 90) }
+            d -= arc
+            if d <= rightEdge { return pt(rect.maxX, rect.minY + r + CGFloat(d)) }
+            d -= rightEdge
+            if d <= arc { return arcPt(rect.maxX - r, rect.maxY - r, d / arc * 90) }
+            d -= arc
+            if d <= bottomEdge { return pt(rect.maxX - r - CGFloat(d), rect.maxY) }
+            d -= bottomEdge
+            if d <= arc { return arcPt(rect.minX + r, rect.maxY - r, 90 + d / arc * 90) }
+            d -= arc
+            if d <= rightEdge { return pt(rect.minX, rect.maxY - r - CGFloat(d)) }
+            d -= rightEdge
+            if d <= arc { return arcPt(rect.minX + r, rect.minY + r, 180 + d / arc * 90) }
+            d -= arc
+            return pt(rect.minX + r + CGFloat(d), rect.minY)
+        }
+    }
+
+    // 分享按钮 右上角 打开今日成就卡片弹窗
     var shareBtn: some View {
         Button {
-            /* 分享逻辑后续做 */
+            ShareCardWindow.show()
         } label: {
             Image(systemName: "arrowshape.turn.up.right")
                 .font(.system(size: 12, weight: .medium))
@@ -197,6 +324,7 @@ struct PanelView: View {
             state.hoverRow = nil
             state.hoverGoal = false
             state.hoverBtn = nil
+            state.markLayoutJump()
         }
     }
 
@@ -425,20 +553,24 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.15), value: state.hoverConfirmed)
     }
 
-    // 左卡 剩余量 点击换单位 喝超了按0显示 不出负数
+    // 左卡 剩余量 点击换单位 外圈进度=今日完成度 喝超了按0显示 不出负数
     var remainCard: some View {
         let remain = max(0, Double(todayGoal) - consumedML)
-        return panelCard("剩余水量", remainText(remain))
+        return panelCard("剩余水量", remainText(remain),
+                         progress: min(consumedML / Double(max(todayGoal, 1)), 1.0))
             .onTapGesture { state.unitIndex = (state.unitIndex + 1) % 3 }
     }
 
-    // 右卡 下次提醒 点击切倒计时 标签跟着变
+    // 右卡 下次提醒 点击切倒计时 外圈进度=临近下次提醒的程度
     func remindCard(_ now: Date) -> some View {
-        panelCard(state.showCountdown ? "倒计时" : "下次提醒", remindText(now))
+        let remainSec = max(0, state.nextRemind.timeIntervalSince(now))
+        let countdown = 1 - remainSec / state.remindInterval
+        return panelCard(state.showCountdown ? "倒计时" : "下次提醒", remindText(now),
+                         progress: min(max(countdown, 0), 1), countdown: true)
             .onTapGesture { state.showCountdown.toggle() }
     }
 
-    func panelCard(_ title: String, _ value: String) -> some View {
+    func panelCard(_ title: String, _ value: String, progress: Double? = nil, countdown: Bool = false) -> some View {
         VStack(alignment: .center, spacing: 3) {
             Text(title)
                 .font(.system(size: 10))
@@ -452,6 +584,47 @@ struct PanelView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        // 外圈进度 轨道+进度线 从顶部中央顺时针 倒计时卡加刻度和动点
+        // 跳变瞬间和几何异常时只画轨道 装饰层暂停防错位闪现
+        .overlay(
+            GeometryReader { geo in
+                let rectOk = geo.size.width > 10 && geo.size.width < 200
+                    && geo.size.height > 10 && geo.size.height < 80
+                let decorate = !state.layoutJumping && rectOk
+                return ZStack {
+                    // 轨道
+                    RoundedRectOutlineShape.RoundedRectPartialShape(from: 0, to: 1, radius: 10)
+                        .stroke(Color.primary.opacity(0.08), style: StrokeStyle(lineWidth: 2))
+                    if decorate && countdown {
+                        // 时间刻度 60格 时钟式 每逢5主刻度长蓝 短灰
+                        ForEach(0..<60, id: \.self) { i in
+                            let isMajor = i % 5 == 0
+                            RoundedRectOutlineShape.RoundedRectPartialShape(from: Double(i) / 60,
+                                                                            to: Double(i) / 60 + (isMajor ? 0.008 : 0.004),
+                                                                            radius: 10)
+                                .stroke(isMajor ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.18),
+                                        style: StrokeStyle(lineWidth: isMajor ? 2.5 : 1.5))
+                        }
+                    }
+                    if let progress, decorate {
+                        let clamped = min(max(progress, 0), 1)
+                        // 进度线
+                        RoundedRectOutlineShape.RoundedRectPartialShape(from: 0, to: clamped, radius: 10)
+                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                            .animation(.easeOut(duration: 0.4), value: progress)
+                        if countdown {
+                            // 倒计时动点 走到哪亮到哪
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 6, height: 6)
+                                .position(RoundedRectOutlineShape.point(in: CGRect(origin: .zero, size: geo.size), t: clamped, radius: 10))
+                        }
+                    }
+                }
+                // 撑满测量区 坐标系原点对齐卡片左上角 position才准
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+        )
     }
 
     // 剩余文案 ml / L / 升 轮换

@@ -28,14 +28,33 @@ final class PanelState: ObservableObject {
     @Published var editingGoalText = ""
     @Published var celebrate = false      // 达标庆祝 一次性
     @Published var panelHeight: CGFloat = 0   // 内容实测高度 用于同步窗口
+    @Published var layoutJumping = false      // 窗口跳变中 装饰层暂停绘制防错位闪现
     var pageHeight: CGFloat = 0               // 主页滑动区高度 实验室页钉这个高度 滑动期间窗口不变
     var wasGoalReached = false            // 上次是否已达标 算跨越用
     // 假数据 下次提醒按启动时间+间隔算 之后由提醒器接管
     let nextRemind = Date().addingTimeInterval(45 * 60)
+    let remindInterval: TimeInterval = 45 * 60  // 提醒间隔 倒计时环算进度用
 
     private var hoverWork: DispatchWorkItem?
     private var undoToken = 0
     private var undoWork: DispatchWorkItem?
+    private var jumpToken = 0
+    private var jumpWork: DispatchWorkItem?
+
+    // 标记窗口跳变 80ms内装饰层不画 防几何错位闪现
+    func markLayoutJump() {
+        layoutJumping = true
+        jumpToken += 1
+        let token = jumpToken
+        jumpWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            if self?.jumpToken == token {
+                self?.layoutJumping = false
+            }
+        }
+        jumpWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: w)
+    }
 
     // 波浪相位累加器 逐帧推进 庆祝时加速
     final class WaveClock {
