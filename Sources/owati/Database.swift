@@ -52,6 +52,10 @@ final class Database {
                 date TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_drink_date ON drink_records(date);
+            CREATE TABLE IF NOT EXISTS goal_overrides (
+                date TEXT PRIMARY KEY,
+                goal_ml INTEGER NOT NULL
+            );
         """)
     }
 
@@ -77,6 +81,28 @@ final class Database {
     // 今日总量
     func todayTotalML() -> Int {
         totalML(on: Self.dayFormat.string(from: Date()))
+    }
+
+    // 当日目标覆盖 只影响这一天 没设过返回nil
+    func todayGoalOverride() -> Int? {
+        var stmt: OpaquePointer?
+        let sql = "SELECT goal_ml FROM goal_overrides WHERE date = ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, Self.dayFormat.string(from: Date()), -1, transient)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return Int(sqlite3_column_int64(stmt, 0))
+    }
+
+    // 设置当日目标 只写今天这个日期 明天起仍用默认值
+    func setGoalOverride(date: String, ml: Int) {
+        var stmt: OpaquePointer?
+        let sql = "INSERT OR REPLACE INTO goal_overrides (date, goal_ml) VALUES (?, ?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, date, -1, transient)
+        sqlite3_bind_int(stmt, 2, Int32(ml))
+        sqlite3_step(stmt)
     }
 
     // 今日杯数

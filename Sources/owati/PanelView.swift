@@ -1,115 +1,16 @@
 import SwiftUI
 
-// 最近一次可撤销的操作
-enum UndoAction {
-    case deleted(id: Int64, date: Date, ml: Int)  // 删除 按原时间插回
-    case edited(id: Int64, oldML: Int)            // 修改 回退到旧值
-}
-
-// 面板交互状态
-final class PanelState: ObservableObject {
-    static let shared = PanelState()
-    @Published var unitIndex = 0          // 剩余 0 ml 1 L 2 升
-    @Published var showCountdown = false  // 下次提醒 时刻 <-> 倒计时
-    @Published var hoverDay: Int? = nil   // 周水滴悬停的列序号
-    @Published var hoverConfirmed: Int? = nil // 过了延迟还悬停才亮tooltip 挡布局跳变时的瞬时误报
-    private var hoverWork: DispatchWorkItem?
-
-    // 悬停防抖 0.25秒后才真正亮提示
-    func setHover(_ idx: Int?) {
-        hoverWork?.cancel()
-        hoverWork = nil
-        hoverDay = idx
-        if idx == nil {
-            hoverConfirmed = nil
-            return
-        }
-        let w = DispatchWorkItem { [weak self] in
-            self?.hoverConfirmed = self?.hoverDay
-        }
-        hoverWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
-    }
-    @Published var showDetail = false     // 今日详情 展开/收起
-    @Published var dateMode = 0          // 右上角 0公历 1农历 2周五判断 点击循环
-    @Published var showLab = false       // 实验室页 面板左滑进入
-    @Published var celebrate = false      // 达标庆祝 一次性
-    var wasGoalReached = false            // 上次是否已达标 算跨越用
-
-    // 波浪相位累加器 逐帧推进 庆祝时加速
-    final class WaveClock {
-        var phase: Double = 0
-        var last: Date?
-    }
-    let waveClock = WaveClock()
-
-    // 波浪相位推进 逐帧调用 庆祝时奔腾
-    func advanceWave(now: Date, celebrate: Bool) -> Double {
-        let clock = waveClock
-        let dt = clock.last.map { now.timeIntervalSince($0) } ?? 0
-        clock.last = now
-        clock.phase += dt * (celebrate ? 7.5 : 2.2)
-        return clock.phase
-    }
-
-    // 每秒检查是否刚跨过目标 跨过就放一次庆祝
-    func checkGoal(consumedML: Double, goal: Int) {
-        let reached = goal > 0 && consumedML >= Double(goal)
-        if reached && !wasGoalReached {
-            celebrate = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { [weak self] in
-                self?.celebrate = false
-            }
-        }
-        wasGoalReached = reached
-    }
-    @Published var hoverRow: Int64? = nil // 时间线悬停的记录id
-    @Published var editingId: Int64? = nil    // 正在改ml的记录id
-    @Published var editingText = ""           // 编辑框当前内容
-    var editingOldML = 0                      // 进编辑前的量 算撤销用
-    @Published var undo: UndoAction? = nil    // 最近一次可撤销操作
-    @Published var undoText = ""
-    @Published var panelHeight: CGFloat = 0   // 内容实测高度 用于同步窗口
-    var pageHeight: CGFloat = 0               // 主页滑动区高度 实验室页钉这个高度 滑动期间窗口不变
-    // 假数据 下次提醒按启动时间+间隔算 之后由提醒器接管
-    let nextRemind = Date().addingTimeInterval(45 * 60)
-
-    private var undoToken = 0
-    private var undoWork: DispatchWorkItem?
-
-    // 记一笔可撤销操作 6秒没撤销就过期
-    func setUndo(_ a: UndoAction, text: String) {
-        undo = a
-        undoText = text
-        undoToken += 1
-        let token = undoToken
-        undoWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in
-            if self?.undoToken == token {
-                self?.undo = nil
-                self?.undoText = ""
-            }
-        }
-        undoWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: w)
-    }
-
-    // 清掉撤销(撤销成功或新操作顶掉时)
-    func clearUndo() {
-        undoWork?.cancel()
-        undo = nil
-        undoText = ""
-    }
-}
-
-// 面板主体
+// 面板主体 主页 + 底栏 + 窗口高度同步
 struct PanelView: View {
     @ObservedObject var state = PanelState.shared
     @ObservedObject var config = AppConfig.shared
-    private let db = Database.shared
+    let db = Database.shared
 
     // 今日已喝 真数据 来自SQLite
-    private var consumedML: Double { Double(db.todayTotalML()) }
+    var consumedML: Double { Double(db.todayTotalML()) }
+
+    // 今日生效目标 当日覆盖优先 否则用全局默认
+    var todayGoal: Int { db.todayGoalOverride() ?? config.dailyGoalML }
 
     static let dayFormat: DateFormatter = {
         let f = DateFormatter()
@@ -137,26 +38,34 @@ struct PanelView: View {
         return "\(c.isLeapMonth == true ? "闰" : "")\(lunarMonths[m - 1])\(lunarDays[d - 1])"
     }
 
+    // 产品logo 与状态栏同源 模板模式可染色
+    static let productLogo: NSImage? = {
+        let path = (#filePath as NSString).deletingLastPathComponent + "/../../demo/png/owati-44.png"
+        guard let img = NSImage(contentsOfFile: path) else { return nil }
+        img.size = NSSize(width: 28, height: 28)
+        img.isTemplate = true
+        return img
+    }()
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { ctx in // 秒级时钟 驱动日期和倒计时
-            let _ = state.checkGoal(consumedML: consumedML, goal: config.dailyGoalML)
+            let _ = state.checkGoal(consumedML: consumedML, goal: todayGoal)
             VStack(spacing: 0) {
                 // 滑动区 主页 <-> 实验室页
                 ZStack {
                     // 主页
                     VStack(spacing: 16) {
-                        // 左上角 今天 + 日期注脚
-                        HStack(alignment: .firstTextBaseline) {
-                            Text("今日")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundColor(.primary)
+                        // 左上角 logo呼吸灯 + 日期注脚
+                        HStack(alignment: .center, spacing: 8) {
+                            logoBreath
                             Spacer()
+                            shareBtn
                             topRightDate(ctx.date)
                         }
                         // 圆环 + 环下三列数据
                         VStack(spacing: 12) {
-                            WaveRing(progress: consumedML / Double(config.dailyGoalML),
-                                     consumedML: consumedML, goalML: config.dailyGoalML,
+                            WaveRing(progress: consumedML / Double(todayGoal),
+                                     consumedML: consumedML, goalML: todayGoal,
                                      celebrate: state.celebrate)
                             // 三列数据
                             HStack(spacing: 0) {
@@ -233,6 +142,43 @@ struct PanelView: View {
         .onChange(of: state.panelHeight) { _ in syncWindowHeight() }
     }
 
+    // 分享按钮 右上角 逻辑后续做
+    var shareBtn: some View {
+        Button {
+            /* 分享逻辑后续做 */
+        } label: {
+            Image(systemName: "arrowshape.turn.up.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(state.hoverBtn == "分享" ? Color.accentColor : Color.secondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in
+            state.hoverBtn = h ? "分享" : (state.hoverBtn == "分享" ? nil : state.hoverBtn)
+        }
+    }
+
+    // 产品logo 呼吸灯 无色→蓝→无色 5秒一周期 MacBook呼吸灯同款节奏
+    // 双层叠加: 底层常驻原色 顶层蓝色随呼吸盖上 颜色是真插值不是透明度闪
+    var logoBreath: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
+            let s = 0.5 + 0.5 * sin(ctx.date.timeIntervalSinceReferenceDate * 2 * .pi / 5.0)
+            ZStack {
+                if let logo = Self.productLogo {
+                    Image(nsImage: logo).foregroundColor(.primary)
+                    Image(nsImage: logo).foregroundColor(.accentColor.opacity(s))
+                } else {
+                    Image(systemName: "drop.fill").font(.system(size: 28)).foregroundColor(.primary)
+                    Image(systemName: "drop.fill").font(.system(size: 28)).foregroundColor(.accentColor.opacity(s))
+                }
+            }
+            // 峰值辉光 + 微缩放
+            .shadow(color: .accentColor.opacity(0.5 * s), radius: 5)
+            .scaleEffect(1 + 0.05 * s)
+        }
+    }
+
     // 内容高度变了 把宿主窗口改成一样高 顶边贴着菜单栏不动
     func syncWindowHeight() {
         let h = state.panelHeight
@@ -249,10 +195,12 @@ struct PanelView: View {
             // 窗口一跳 视图会在光标底下扫过 主动清悬停防tooltip闪现/卡住
             state.setHover(nil)
             state.hoverRow = nil
+            state.hoverGoal = false
+            state.hoverBtn = nil
         }
     }
 
-    // 底栏按钮 图标+小字 active时点亮主题色
+    // 底栏按钮 图标+小字 active/悬停时点亮主题色
     func controlButton(_ title: String, _ icon: String, _ key: String, active: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 2) {
@@ -262,10 +210,13 @@ struct PanelView: View {
                     .font(.system(size: 9))
             }
             .frame(width: 36, height: 32)
-            .foregroundColor(active ? Color.accentColor : Color.primary.opacity(0.5))
+            .foregroundColor((active || state.hoverBtn == title) ? Color.accentColor : Color.primary.opacity(0.5))
         }
         .buttonStyle(.plain)
         .keyboardShortcut(KeyEquivalent(key.first!), modifiers: .command)
+        .onHover { hovering in
+            state.hoverBtn = hovering ? title : (state.hoverBtn == title ? nil : state.hoverBtn)
+        }
         .frame(maxWidth: .infinity)
     }
 
@@ -275,7 +226,7 @@ struct PanelView: View {
             Text(value)
                 .font(.system(size: 13, weight: .bold))
                 .monospacedDigit()
-                .foregroundColor(.primary)
+                .foregroundColor(.accentColor)
             Text(label)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
@@ -287,7 +238,7 @@ struct PanelView: View {
     var statusLine: some View {
         let cups = db.todayCups()
         let consumed = Int(consumedML)
-        let goal = config.dailyGoalML
+        let goal = todayGoal
         return HStack(spacing: 5) {
             if cups == 0 {
                 Image(systemName: "drop.fill")
@@ -304,8 +255,11 @@ struct PanelView: View {
             } else {
                 Image(systemName: "target")
                     .font(.system(size: 11))
+                    .foregroundColor(.accentColor)
+                Text("离 ")
                     .foregroundColor(.secondary)
-                Text("离 今日目标 还差 ")
+                goalWord
+                Text(" 还差 ")
                     .foregroundColor(.secondary)
                 Text("\(goal - consumed) ml")
                     .fontWeight(.semibold)
@@ -315,6 +269,57 @@ struct PanelView: View {
         .font(.system(size: 12))
     }
 
+    // "今日目标"四个字 悬停显示当前数值 点击可改 只影响今天
+    var goalWord: some View {
+        Group {
+            if state.editingGoal {
+                TextField("", text: Binding(
+                    get: { state.editingGoalText },
+                    set: { state.editingGoalText = $0 }
+                ))
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .frame(width: 46)
+                .onSubmit { commitGoalEdit() }
+                .onExitCommand { state.editingGoal = false }
+            } else {
+                // 悬停时原地显示目标数值 点击进编辑
+                if state.hoverGoal {
+                    Text("\(todayGoal) ml")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.accentColor)
+                        .contentShape(Rectangle())
+                        .onHover { state.hoverGoal = $0 }
+                        .onTapGesture {
+                            state.editingGoal = true
+                            state.editingGoalText = "\(todayGoal)"
+                        }
+                } else {
+                    Text("今日目标")
+                        .foregroundColor(.secondary)
+                        .contentShape(Rectangle())
+                        .onHover { state.hoverGoal = $0 }
+                        .onTapGesture {
+                            state.editingGoal = true
+                            state.editingGoalText = "\(todayGoal)"
+                        }
+                }
+            }
+        }
+    }
+
+    // 保存今日目标 500-10000合法 只写今天这个日期
+    func commitGoalEdit() {
+        defer {
+            state.editingGoal = false
+            state.editingGoalText = ""
+        }
+        guard let ml = Int(state.editingGoalText.trimmingCharacters(in: .whitespaces)) else { return }
+        guard ml >= 500, ml <= 10000 else { return }
+        db.setGoalOverride(date: Database.dayFormat.string(from: Date()), ml: ml)
+    }
+
     // 右上角 点击循环 公历 -> 农历 -> 周五判断
     func topRightDate(_ date: Date) -> some View {
         Group {
@@ -322,7 +327,7 @@ struct PanelView: View {
             case 1:
                 Text(Self.lunarText(date))
             case 2:
-                let isFriday = true // 临时写死预览周五形态 看完改回
+                let isFriday = Calendar.current.component(.weekday, from: date) == 6
                 if isFriday {
                     VStack(alignment: .trailing, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -350,22 +355,6 @@ struct PanelView: View {
         .foregroundColor(.secondary)
         .contentShape(Rectangle())
         .onTapGesture { state.dateMode = (state.dateMode + 1) % 3 }
-    }
-
-    // 周五彩蛋 到了周五右上角会喊出来 周五俩字加大
-    func fridayText(_ date: Date) -> some View {
-        let isFriday = Calendar.current.component(.weekday, from: date) == 6
-        return Group {
-            if isFriday {
-                (Text("今天是 ")
-                    + Text("周五").font(.system(size: 14, weight: .semibold)))
-                    .font(.system(size: 11))
-            } else {
-                Text("今天不是周五")
-                    .font(.system(size: 11))
-            }
-        }
-        .foregroundColor(.secondary)
     }
 
     // 本周水滴 一天一滴 滴内是当天杯数 滴下是几号 周一开头 悬停显示当天详情
@@ -436,207 +425,9 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.15), value: state.hoverConfirmed)
     }
 
-    // 间隔标注 轨道在这里断成虚线 文字贴着断口 表达这段没喝水
-    func gapMarker(_ minutes: Int) -> some View {
-        let h = Int((Double(minutes) / 60).rounded())
-        return HStack(spacing: 8) {
-            Color.clear.frame(width: 32, height: 0)
-            Rectangle()
-                .stroke(Color.primary.opacity(0.18),
-                        style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
-                .frame(width: 1, height: 14)
-            Text("隔了 \(h) 小时")
-                .font(.system(size: 9))
-                .foregroundColor(.secondary.opacity(0.7))
-            Spacer()
-        }
-        .padding(.vertical, 1)
-    }
-
-    // 今日详情 开关行 + 喝水时间线 时间正序
-    var todayDetail: some View {
-        let records = db.todayRecords()
-        // 间隔标注条数 高度计算用
-        let gapMarks = zip(records, records.dropFirst())
-            .filter { $1.date.timeIntervalSince($0.date) >= 7200 }.count
-        return VStack(spacing: 6) {
-            Button {
-                state.showDetail.toggle()
-                // 布局要跳变 清掉悬停 免得水滴tooltip在光标下被扫出来
-                state.setHover(nil)
-                state.hoverRow = nil
-            } label: {
-                HStack {
-                    Text("今日详情")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    // 胶囊小开关 朝下=展开 朝上=收起
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .rotationEffect(.degrees(state.showDetail ? 180 : 0))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(.primary.opacity(0.07), in: Capsule())
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            // 不加动画 内容和窗口同一帧跳变 才不会有中间态空白
-            if state.showDetail {
-                if records.isEmpty {
-                    Text("今天还没有记录")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 2)
-                } else {
-                    // 竖轨串起每一条 时间左 量右 悬停可删 可改ml
-                    // 每行20pt(16内容+4上下距) 少时贴内容 多时3行封顶滚动
-                    ScrollView {
-                        VStack(spacing: 0) {
-                        ForEach(Array(records.enumerated()), id: \.element.id) { i, r in
-                            // 隔太久插一条间隔标注
-                            if i > 0 {
-                                let gapMin = Int(r.date.timeIntervalSince(records[i - 1].date) / 60)
-                                if gapMin >= 120 {
-                                    gapMarker(gapMin)
-                                }
-                            }
-                            HStack(spacing: 8) {
-                                Text(Self.timeFormat.string(from: r.date))
-                                    .font(.system(size: 10))
-                                    .monospacedDigit()
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 32, alignment: .leading)
-                                ZStack {
-                                    Capsule()
-                                        .fill(Color.primary.opacity(0.12))
-                                        .frame(width: 1)
-                                    Circle()
-                                        .fill(Color.accentColor)
-                                        .frame(width: 5, height: 5)
-                                }
-                                .frame(height: 16)
-                                Image(systemName: "drop.fill")
-                                    .font(.system(size: 8))
-                                    .foregroundColor(Color.accentColor.opacity(0.55))
-                                Spacer()
-                                // 量 点击进编辑 回车保存 Esc取消
-                                if state.editingId == r.id {
-                                    TextField("", text: Binding(
-                                        get: { state.editingText },
-                                        set: { state.editingText = $0 }
-                                    ))
-                                    .textFieldStyle(.plain)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(width: 42)
-                                    .onSubmit { commitEdit() }
-                                    .onExitCommand { state.editingId = nil }
-                                } else {
-                                    Text("\(r.ml) ml")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .monospacedDigit()
-                                        .foregroundColor(.primary)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            state.editingId = r.id
-                                            state.editingText = "\(r.ml)"
-                                            state.editingOldML = r.ml
-                                        }
-                                }
-                                // 删除按钮 悬停该行才出现 占位不跳动
-                                ZStack {
-                                    if state.hoverRow == r.id {
-                                        Button {
-                                            state.setUndo(.deleted(id: r.id, date: r.date, ml: r.ml),
-                                                          text: "已删除 \(r.ml) ml")
-                                            db.deleteDrink(id: r.id)
-                                        } label: {
-                                            Image(systemName: "trash")
-                                                .font(.system(size: 8, weight: .medium))
-                                                .foregroundColor(.secondary)
-                                                .frame(width: 14, height: 14)
-                                                .background(.primary.opacity(0.1), in: Circle())
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .frame(width: 15)
-                            }
-                            .padding(.vertical, 2)
-                            .onHover { hovering in
-                                state.hoverRow = hovering ? r.id : (state.hoverRow == r.id ? nil : state.hoverRow)
-                            }
-                        }
-                        }
-                    }
-                    // 确定性高度 行20pt 标注16pt 超了封顶滚动
-                    .frame(height: min(CGFloat(records.count) * 20 + CGFloat(gapMarks) * 16 + 2, 62))
-                    .padding(.top, 2)
-                }
-            }
-        }
-    }
-
-    // 撤销条 最近一次删除/修改可反悔
-    var undoBar: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "arrow.uturn.backward.circle")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-            Text(state.undoText)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-            Button {
-                performUndo()
-            } label: {
-                Text("撤销")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.accentColor)
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // 执行撤销
-    func performUndo() {
-        guard let u = state.undo else { return }
-        switch u {
-        case .deleted(_, let date, let ml):
-            db.restoreDrink(ts: date, ml: ml)
-        case .edited(let id, let oldML):
-            db.updateDrink(id: id, ml: oldML)
-        }
-        state.clearUndo()
-    }
-
-    // 保存编辑的ml 非法输入直接退出编辑
-    func commitEdit() {
-        defer {
-            state.editingId = nil
-            state.editingText = ""
-        }
-        guard let id = state.editingId, let ml = Int(state.editingText.trimmingCharacters(in: .whitespaces)) else { return }
-        guard ml > 0, ml <= 5000 else { return }
-        guard ml != state.editingOldML else { return }
-        db.updateDrink(id: id, ml: ml)
-        state.setUndo(.edited(id: id, oldML: state.editingOldML), text: "已改为 \(ml) ml")
-    }
-
-    // 实验室页 左滑进入 空白面板 再点实验室按钮滑回
-    var labPage: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-        }
-    }
-
-    // 左卡 剩余量 点击换单位
+    // 左卡 剩余量 点击换单位 喝超了按0显示 不出负数
     var remainCard: some View {
-        let remain = Double(config.dailyGoalML) - consumedML
+        let remain = max(0, Double(todayGoal) - consumedML)
         return panelCard("剩余水量", remainText(remain))
             .onTapGesture { state.unitIndex = (state.unitIndex + 1) % 3 }
     }
@@ -655,7 +446,7 @@ struct PanelView: View {
             Text(value)
                 .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
-                .foregroundColor(.primary)
+                .foregroundColor(.accentColor)
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, 10)
@@ -679,117 +470,5 @@ struct PanelView: View {
         }
         let s = max(0, Int(state.nextRemind.timeIntervalSince(now)))
         return String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
-    }
-}
-
-// 圆形进度 外圈弧线 里头装波浪
-struct WaveRing: View {
-    var progress: Double
-    var consumedML: Double
-    var goalML: Int
-    var celebrate: Bool = false
-
-    // 空态也留一点水位 "还没喝"也有画面
-    private var waterLevel: Double { max(progress, 0.06) }
-    private var isEmpty: Bool { progress <= 0.001 }
-
-    var body: some View {
-        ZStack {
-            // 圆内底色 亮暗外观都衬文字
-            Circle().fill(.primary.opacity(0.05))
-            // 外圈进度弧
-            ZStack {
-                Circle()
-                    .stroke(.primary.opacity(0.08), style: StrokeStyle(lineWidth: 6))
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(
-                        AngularGradient(colors: [.cyan, .blue, .indigo], center: .center,
-                                        startAngle: .degrees(0), endAngle: .degrees(360 * progress)),
-                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90)) // 从正上方起笔
-                // 顶部高光 玻璃感
-                Circle()
-                    .trim(from: 0.01, to: 0.24)
-                    .stroke(
-                        AngularGradient(colors: [.white.opacity(0.02), .white.opacity(0.3), .white.opacity(0.02)],
-                                        center: .center, startAngle: .degrees(-80), endAngle: .degrees(-20)),
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                    )
-            }
-            .padding(3)
-            // 波浪 双层 一深一浅错开动 相位累加 庆祝时奔腾
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
-                let p = PanelState.shared.advanceWave(now: ctx.date, celebrate: celebrate)
-                ZStack {
-                    WaveShape(level: waterLevel, phase: p + 1.3, amplitude: 4)
-                        .fill(.cyan.opacity(0.3))
-                    WaveShape(level: waterLevel, phase: p * 1.41 + 3.8, amplitude: 5.5)
-                        .fill(LinearGradient(colors: [.blue.opacity(0.7), .cyan.opacity(0.85)],
-                                             startPoint: .top, endPoint: .bottom))
-                }
-                .animation(.spring(duration: 0.9, bounce: 0.25), value: progress)
-            }
-            .clipShape(Circle())
-            .padding(6)
-            // 中央 百分比 + 喝了多少 空态数字弱化
-            VStack(spacing: 3) {
-                Text("\(Int(progress * 100))%")
-                    .font(.system(size: 27, weight: .bold, design: .rounded))
-                    .foregroundColor(isEmpty ? .primary.opacity(0.35) : .primary)
-                    .scaleEffect(celebrate ? 1.12 : 1)
-                    .animation(.spring(duration: 0.45, bounce: 0.5), value: celebrate)
-                Text("\(Int(consumedML)) / \(goalML) ml")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.primary)
-                    .opacity(0.7)
-            }
-        }
-        .frame(width: 120, height: 120)
-        // 达标微弹 整环轻弹一下
-        .scaleEffect(celebrate ? 1.05 : 1)
-        .animation(.spring(duration: 0.45, bounce: 0.45), value: celebrate)
-    }
-}
-
-// 正弦水面 线以下填满
-struct WaveShape: Shape {
-    var level: Double     // 0 底 1 顶
-    var phase: Double
-    var amplitude: CGFloat
-
-    nonisolated var animatableData: Double {
-        get { level }
-        set { level = newValue }
-    }
-
-    nonisolated func path(in rect: CGRect) -> Path {
-        let baseline = rect.maxY - rect.height * level
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: baseline))
-        // 沿正弦走 每隔4pt取一点
-        let steps = max(8, Int(rect.width / 4))
-        for s in 0...steps {
-            let x = rect.minX + rect.width * CGFloat(s) / CGFloat(steps)
-            let y = baseline + amplitude * sin(x / rect.width * 2 * .pi * 1.5 + phase)
-            p.addLine(to: CGPoint(x: x, y: y))
-        }
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        p.closeSubpath()
-        return p
-    }
-}
-
-
-// 找到 MenuBarExtra 的宿主窗口去掉系统底色 玻璃圆角才能干净地自己画
-func clearHostWindowBackground() {
-    for w in NSApp.windows {
-        // 向导窗口是titled 跳过 菜单栏小图标窗口不够高 跳过
-        if w.styleMask.contains(.titled) || w.frame.height <= 80 { continue }
-        w.backgroundColor = .clear
-        w.isOpaque = false
-        w.hasShadow = false
     }
 }
