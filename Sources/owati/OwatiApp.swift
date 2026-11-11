@@ -11,6 +11,8 @@ struct OwatiApp: App {
         // 纯黑+透明 系统自动适配亮色暗色菜单栏
         icon.isTemplate = true
         menuIcon = icon
+        // 确保数据库已开
+        _ = Database.shared
         // 首次启动 弹出四步设置向导
         if !AppConfig.shared.didOnboarding {
             DispatchQueue.main.async { Self.showOnboarding() }
@@ -43,26 +45,5 @@ struct OwatiApp: App {
             Image(nsImage: menuIcon)
         }
         .menuBarExtraStyle(.window) // 面板模式 不是菜单模式
-    }
-}
-
-// 磨砂玻璃背景（SwiftUI 自带的 Material 在这里会发黑 只能用 AppKit 的）
-struct GlassBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = .underWindowBackground // 透出面板后面的东西
-        v.blendingMode = .behindWindow
-        v.state = .active
-        return v
-    }
-    func updateNSView(_ v: NSVisualEffectView, context: Context) {}
-}
-
-// 面板 暂时空白 内容后面加
-struct PanelView: View {
-    var body: some View {
-        VStack {}
-            .frame(width: 300, height: 380)
-            .background(GlassBackground())
     }
 }
