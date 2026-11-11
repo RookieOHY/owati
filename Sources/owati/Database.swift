@@ -152,6 +152,74 @@ final class Database {
         return out
     }
 
+    // 一周每天喝水总量 key=yyyy-MM-dd
+    func mlByDate(dates: [String]) -> [String: Int] {
+        guard !dates.isEmpty else { return [:] }
+        let qs = dates.map { _ in "?" }.joined(separator: ",")
+        let sql = "SELECT date, SUM(amount_ml) FROM drink_records WHERE date IN (\(qs)) GROUP BY date"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [:] }
+        defer { sqlite3_finalize(stmt) }
+        for (i, d) in dates.enumerated() {
+            sqlite3_bind_text(stmt, Int32(i + 1), d, -1, transient)
+        }
+        var out: [String: Int] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out[String(cString: sqlite3_column_text(stmt, 0))] = Int(sqlite3_column_int64(stmt, 1))
+        }
+        return out
+    }
+
+    // 今日喝水明细 时间正序
+    func todayRecords() -> [(id: Int64, date: Date, ml: Int)] {
+        var stmt: OpaquePointer?
+        let sql = "SELECT id, ts, amount_ml FROM drink_records WHERE date = ? ORDER BY ts ASC"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, Self.dayFormat.string(from: Date()), -1, transient)
+        var out: [(id: Int64, date: Date, ml: Int)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let c = sqlite3_column_text(stmt, 1),
+                  let d = Self.tsFormat.date(from: String(cString: c)) else { continue }
+            out.append((sqlite3_column_int64(stmt, 0), d, Int(sqlite3_column_int64(stmt, 2))))
+        }
+        return out
+    }
+
+    // 改一条记录的量
+    func updateDrink(id: Int64, ml: Int) {
+        var stmt: OpaquePointer?
+        let sql = "UPDATE drink_records SET amount_ml = ? WHERE id = ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(ml))
+        sqlite3_bind_int64(stmt, 2, id)
+        sqlite3_step(stmt)
+    }
+
+    // 删一条记录
+    func deleteDrink(id: Int64) {
+        var stmt: OpaquePointer?
+        let sql = "DELETE FROM drink_records WHERE id = ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int64(stmt, 1, id)
+        sqlite3_step(stmt)
+    }
+
+    // 撤销删除 按原时间插回
+    func restoreDrink(ts: Date, ml: Int) {
+        var stmt: OpaquePointer?
+        let sql = "INSERT INTO drink_records (amount_ml, ts, date) VALUES (?, ?, ?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        let t = Self.tsFormat.string(from: ts)
+        sqlite3_bind_int(stmt, 1, Int32(ml))
+        sqlite3_bind_text(stmt, 2, t, -1, transient)
+        sqlite3_bind_text(stmt, 3, Self.dayFormat.string(from: ts), -1, transient)
+        sqlite3_step(stmt)
+    }
+
     // 取单个整数 带参数绑定
     private func queryInt(_ sql: String, _ params: [String]) -> Int {
         var stmt: OpaquePointer?
