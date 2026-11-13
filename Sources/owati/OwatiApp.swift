@@ -3,6 +3,8 @@ import SwiftUI
 // 程序入口
 @main
 struct OwatiApp: App {
+    @ObservedObject var ui = PanelState.shared
+    private let menuIcon: NSImage
     init() {
         // 加载水滴图标 44px 显示成 22pt
         let path = (#filePath as NSString).deletingLastPathComponent + "/../../demo/png/owati-44.png"
@@ -11,6 +13,8 @@ struct OwatiApp: App {
         // 纯黑+透明 系统自动适配亮色暗色菜单栏
         icon.isTemplate = true
         menuIcon = icon
+        // 动态菜单栏图标的初始帧 静态水滴 引擎1秒内接管渲染
+        PanelState.shared.menuBarImage = icon
         // 确保数据库已开
         _ = Database.shared
         // 提醒引擎 进程级常驻
@@ -37,14 +41,12 @@ struct OwatiApp: App {
         w.makeKeyAndOrderFront(nil)
     }
 
-    private let menuIcon: NSImage
-
     var body: some Scene {
-        // 菜单栏水滴 点击弹出面板
+        // 菜单栏水滴 点击弹出面板 图标动态渲染(进度环+倒计时)
         MenuBarExtra {
             PanelView()
         } label: {
-            Image(nsImage: menuIcon)
+            Image(nsImage: ui.menuBarImage)
         }
         .menuBarExtraStyle(.window) // 面板模式 不是菜单模式
     }

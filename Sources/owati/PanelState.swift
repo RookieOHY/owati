@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreGraphics
+import AppKit
 
 // 最近一次可撤销的操作
 enum UndoAction {
@@ -48,7 +49,10 @@ final class PanelState: ObservableObject {
     @Published var fullScreenVisible = false    // 全屏提醒在不在
     @Published var fullScreenDeadline = Date()  // 全屏自动关闭时刻
     @Published var fullScreenLeft = 30          // 全屏剩余秒数 引擎Timer驱动 TimelineView不跳
+    @Published var menuBarImage = NSImage(size: NSSize(width: 22, height: 22))  // 菜单栏动态图标 环+倒计时
     @Published var cardBreath = false           // 水滴呼吸动画驱动
+    private var menuGlyph: NSImage?
+    private var menuTimer: Timer?
     var skipStreak = 0                          // 连续跳过且没记录的次数 够2次换催促tips
 
     // tips池 轮换防审美疲劳
@@ -170,10 +174,76 @@ final class PanelState: ObservableObject {
     // 进程一起来就跑 与面板开不开无关
     func startRemindEngine() {
         scheduleNext(from: Date())
+        loadMenuGlyph()
+        renderMenuBar()
+        startMenuBarTimer()
         remindTimer?.invalidate()
         remindTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.remindTick()
         }
+    }
+
+    // 菜单栏图标每秒重绘 倒计时文本+喝水进度环 滴答清单同款模板单色
+    private func startMenuBarTimer() {
+        menuTimer?.invalidate()
+        menuTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.renderMenuBar()
+        }
+    }
+
+    private func loadMenuGlyph() {
+        let path = (#filePath as NSString).deletingLastPathComponent + "/../../demo/png/owati-22.png"
+        menuGlyph = NSImage(contentsOfFile: path)
+    }
+
+    func renderMenuBar() {
+        let now = Date()
+        let sleeping = remindSleeping(now)
+        let c = AppConfig.shared
+        let goal = Database.shared.todayGoalOverride() ?? c.dailyGoalML
+        let progress = goal > 0 ? min(1, Double(Database.shared.todayTotalML()) / Double(goal)) : 0
+        // 倒计时文本 滴答清单同款 恒 h:mm:ss
+        var text: String?
+        if c.menuCountdown && !sleeping {
+            let s = max(0, Int(nextRemind.timeIntervalSince(now)))
+            text = String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
+        }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        let iconW: CGFloat = c.menuRing ? 26 : 22
+        let w = iconW + (text != nil ? 6 + ceil((text! as NSString).size(withAttributes: [.font: font]).width) : 0)
+        let img = NSImage(size: NSSize(width: w, height: 22))
+        img.lockFocus()
+        let cx = iconW / 2, cy: CGFloat = 11, r: CGFloat = 9.5
+        // 进度环 track + 喝水进度弧 加粗到2pt
+        if c.menuRing {
+            let track = NSBezierPath(ovalIn: NSRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
+            NSColor.black.withAlphaComponent(0.3).setStroke()
+            track.lineWidth = 2
+            track.stroke()
+            if progress > 0.003 {
+                let arc = NSBezierPath()
+                arc.appendArc(withCenter: NSPoint(x: cx, y: cy), radius: r,
+                              startAngle: 90, endAngle: 90 - progress * 360, clockwise: true)
+                NSColor.black.setStroke()
+                arc.lineWidth = 2
+                arc.lineCapStyle = .round
+                arc.stroke()
+            }
+        }
+        // 中心水滴 有环缩进环内 关环恢复原大小
+        if let glyph = menuGlyph {
+            let g: CGFloat = c.menuRing ? 12 : 22
+            glyph.draw(in: NSRect(x: cx - g / 2, y: cy - g / 2, width: g, height: g))
+        }
+        // 倒计时文本 基线用字体度量正推: 视觉中心(11) = y + ascender - capHeight/2
+        if let t = text {
+            (t as NSString).draw(
+                at: NSPoint(x: iconW + 6, y: 11 - font.ascender + font.capHeight / 2),
+                withAttributes: [.font: font, .foregroundColor: NSColor.black.withAlphaComponent(0.9)])
+        }
+        img.unlockFocus()
+        img.isTemplate = true
+        menuBarImage = img
     }
 
     // 排下次提醒 达标后按节奏倍数放缓 面板倒计时同步
@@ -185,6 +255,7 @@ final class PanelState: ObservableObject {
         }
         remindInterval = TimeInterval(min * 60)
         nextRemind = from.addingTimeInterval(remindInterval)
+        renderMenuBar()   // 下次提醒变了 菜单栏倒计时同步
     }
 
     // 记了一杯 从现在重新计时 收卡

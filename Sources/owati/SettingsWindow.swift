@@ -361,6 +361,16 @@ struct SettingsView: View {
                         switchToggle($cfg.launchAtLogin)
                     }
                     Divider()
+                    settingsRow("circle.dashed", .blue, "菜单栏进度环",
+                        help: "菜单栏图标外圈显示今日喝水进度的圆环，随每次记录即时更新。") {
+                        switchToggle($cfg.menuRing)
+                    }
+                    Divider()
+                    settingsRow("clock", .blue, "菜单栏倒计时",
+                        help: "图标右侧显示距下次提醒的倒计时（时:分:秒），提醒休眠时段自动隐藏。") {
+                        switchToggle($cfg.menuCountdown)
+                    }
+                    Divider()
                     settingsRow("wand.and.stars", .pink, "设置引导") {
                         Button {
                             OwatiApp.showOnboarding()

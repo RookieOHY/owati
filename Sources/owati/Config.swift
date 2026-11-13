@@ -85,6 +85,20 @@ final class AppConfig: ObservableObject {
     @Published var overGoalSilence: Int {
         didSet { ud.set(overGoalSilence, forKey: "overGoalSilence") }
     }
+    // 菜单栏图标外画喝水进度环
+    @Published var menuRing: Bool {
+        didSet {
+            ud.set(menuRing, forKey: "menuRing")
+            PanelState.shared.renderMenuBar()   // 立即重绘
+        }
+    }
+    // 菜单栏图标右侧显示倒计时文本
+    @Published var menuCountdown: Bool {
+        didSet {
+            ud.set(menuCountdown, forKey: "menuCountdown")
+            PanelState.shared.renderMenuBar()
+        }
+    }
     // 会议应用在前台自动暂停提醒
     @Published var meetingPause: Bool {
         didSet { ud.set(meetingPause, forKey: "meetingPause") }
@@ -121,6 +135,8 @@ final class AppConfig: ObservableObject {
         nudgeSkips = d.object(forKey: "nudgeSkips") as? Int ?? 2
         goalIntervalMult = d.object(forKey: "goalIntervalMult") as? Int ?? 2
         overGoalSilence = d.object(forKey: "overGoalSilence") as? Int ?? 150
+        menuRing = d.object(forKey: "menuRing") as? Bool ?? true
+        menuCountdown = d.object(forKey: "menuCountdown") as? Bool ?? true
         meetingPause = d.object(forKey: "meetingPause") as? Bool ?? true
         launchAtLogin = d.object(forKey: "launchAtLogin") as? Bool ?? false
         // 兜底 空的提醒日回落到工作日
