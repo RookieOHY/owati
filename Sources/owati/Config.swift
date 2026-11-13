@@ -61,10 +61,6 @@ final class AppConfig: ObservableObject {
     @Published var appearance: Int {
         didSet { ud.set(appearance, forKey: "appearance"); Self.applyAppearance(appearance) }
     }
-    // 自动检查更新
-    @Published var checkUpdates: Bool {
-        didSet { ud.set(checkUpdates, forKey: "checkUpdates") }
-    }
     // 开机自启动 SMAppService 真实状态为准
     @Published var launchAtLogin: Bool {
         didSet {
@@ -92,7 +88,6 @@ final class AppConfig: ObservableObject {
         soundOn = d.object(forKey: "soundOn") as? Bool ?? true
         soundEffect = d.string(forKey: "soundEffect") ?? Sfx.canFizz.rawValue
         appearance = d.object(forKey: "appearance") as? Int ?? 0
-        checkUpdates = d.object(forKey: "checkUpdates") as? Bool ?? true
         launchAtLogin = d.object(forKey: "launchAtLogin") as? Bool ?? false
         // 兜底 空的提醒日回落到工作日
         if remindDays.isEmpty { remindDays = [2, 3, 4, 5, 6] }

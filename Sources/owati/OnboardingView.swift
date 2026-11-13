@@ -314,7 +314,7 @@ struct OnboardingView: View {
                     .font(.system(size: 20, weight: .bold))
             }
                 .padding(.bottom, 8)
-            Text("休息时间段内不会提醒你喝水")
+            Text("勿扰时间段内不会提醒你喝水")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.bottom, 16)

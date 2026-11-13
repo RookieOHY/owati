@@ -15,6 +15,16 @@ enum Sfx: String, CaseIterable {
         case .pourBright: return "倒水 · 清亮"
         }
     }
+
+    // 横排chips用的短标签
+    var short: String {
+        switch self {
+        case .canFizz: return "开罐嘶嘶"
+        case .canPop: return "开罐轻啵"
+        case .pourDeep: return "倒水咕咚"
+        case .pourBright: return "倒水清亮"
+        }
+    }
 }
 
 // 记录成功的音效 预载全部 重复播

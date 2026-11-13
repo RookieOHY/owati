@@ -627,18 +627,11 @@ struct PanelView: View {
             case 2:
                 let isFriday = Calendar.current.component(.weekday, from: date) == 6
                 if isFriday {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        HStack(alignment: .firstTextBaseline, spacing: 0) {
-                            Text("今天是 ")
-                            Text("周五")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.accentColor)
-                        }
-                        // 重点线 压在周五正下方
-                        Capsule()
-                            .fill(Color.accentColor)
-                            .frame(width: 20, height: 2)
-                            .offset(x: -5)
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text("今天是 ")
+                        Text("周五")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.accentColor)
                     }
                 } else {
                     Text("今天不是周五")

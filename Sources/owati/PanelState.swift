@@ -35,9 +35,7 @@ final class PanelState: ObservableObject {
     @Published var drinkPulse = 0         // 记录一笔后+1 驱动面板立即刷新
     @Published var panelHeight: CGFloat = 0   // 内容实测高度 用于同步窗口
     @Published var layoutJumping = false      // 窗口跳变中 装饰层暂停绘制防错位闪现
-    @Published var settingsTab = 0        // 设置窗口侧栏 0音效 1提醒 2关于
-    @Published var settingsSearch = ""    // 设置窗口搜索框
-    @Published var updateStatus = ""      // 检查更新结果文案
+    @Published var settingsTab = 0        // 设置窗口侧栏 0通用 1关于
     var pageHeight: CGFloat = 0               // 主页滑动区高度 实验室页钉这个高度 滑动期间窗口不变
     var wasGoalReached = false            // 上次是否已达标 算跨越用
     // 下次提醒时间 引擎驱动 面板右卡显示/倒计时共用
