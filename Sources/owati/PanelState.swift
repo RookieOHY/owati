@@ -192,7 +192,8 @@ final class PanelState: ObservableObject {
     }
 
     private func loadMenuGlyph() {
-        let path = (#filePath as NSString).deletingLastPathComponent + "/../../demo/png/owati-22.png"
+        // 用44px源 22pt在Retina正好2x 画12pt(环内)是缩小不糊 22px源放大会糊
+        guard let path = Res.path("demo/png/owati-44.png") else { return }
         menuGlyph = NSImage(contentsOfFile: path)
     }
 
@@ -212,7 +213,16 @@ final class PanelState: ObservableObject {
         let iconW: CGFloat = c.menuRing ? 26 : 22
         let w = iconW + (text != nil ? 6 + ceil((text! as NSString).size(withAttributes: [.font: font]).width) : 0)
         let img = NSImage(size: NSSize(width: w, height: 22))
-        img.lockFocus()
+        // lockFocus离屏只出1x位图 Retina菜单栏拉伸2倍必糊
+        // 显式建2x位图 像素翻倍 坐标仍按点画 亮屏才清晰
+        let scale: CGFloat = 2
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(w * scale), pixelsHigh: Int(22 * scale),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = NSSize(width: w, height: 22)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
         let cx = iconW / 2, cy: CGFloat = 11, r: CGFloat = 9.5
         // 进度环 track + 喝水进度弧 加粗到2pt
         if c.menuRing {
@@ -241,7 +251,8 @@ final class PanelState: ObservableObject {
                 at: NSPoint(x: iconW + 6, y: 11 - font.ascender + font.capHeight / 2),
                 withAttributes: [.font: font, .foregroundColor: NSColor.black.withAlphaComponent(0.9)])
         }
-        img.unlockFocus()
+        NSGraphicsContext.restoreGraphicsState()
+        img.addRepresentation(rep)
         img.isTemplate = true
         menuBarImage = img
     }

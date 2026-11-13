@@ -22,6 +22,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/owati "$APP/Contents/MacOS/owati"
 cp build/owati.icns "$APP/Contents/Resources/owati.icns"
+# 运行时资源 Res定位器从bundle读: 菜单栏/面板图标 + 音效wav
+cp demo/png/owati-44.png demo/png/owati-128.png "$APP/Contents/Resources/"
+cp Resources/*.wav "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

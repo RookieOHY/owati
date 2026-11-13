@@ -40,7 +40,7 @@ struct PanelView: View {
 
     // 产品logo 与状态栏同源 模板模式可染色
     static let productLogo: NSImage? = {
-        let path = (#filePath as NSString).deletingLastPathComponent + "/../../demo/png/owati-44.png"
+        guard let path = Res.path("demo/png/owati-128.png") else { return nil }
         guard let img = NSImage(contentsOfFile: path) else { return nil }
         img.size = NSSize(width: 28, height: 28)
         img.isTemplate = true

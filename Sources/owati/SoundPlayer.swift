@@ -35,12 +35,12 @@ final class SoundPlayer {
 
     private init() {
         for s in Sfx.allCases {
-            let path = (#filePath as NSString).deletingLastPathComponent + "/../../Resources/\(s.rawValue).wav"
-            if let p = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: path)) {
-                p.volume = 0.4
-                p.prepareToPlay()
-                players[s] = p
-            }
+            // 统一资源定位 打包app走bundle 开发态走源码路径
+            guard let path = Res.path("Resources/\(s.rawValue).wav"),
+                  let p = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: path)) else { continue }
+            p.volume = 0.4
+            p.prepareToPlay()
+            players[s] = p
         }
     }
 

@@ -6,9 +6,9 @@ struct OwatiApp: App {
     @ObservedObject var ui = PanelState.shared
     private let menuIcon: NSImage
     init() {
-        // 加载水滴图标 44px 显示成 22pt
-        let path = (#filePath as NSString).deletingLastPathComponent + "/../../demo/png/owati-44.png"
-        let icon = NSImage(contentsOfFile: path)!
+        // 加载水滴图标 44px 显示成 22pt Retina整2倍不糊
+        let icon = Res.path("demo/png/owati-44.png").flatMap { NSImage(contentsOfFile: $0) }
+            ?? NSImage(size: NSSize(width: 22, height: 22)) // 找不到给空占位 引擎1秒内接管
         icon.size = NSSize(width: 22, height: 22)
         // 纯黑+透明 系统自动适配亮色暗色菜单栏
         icon.isTemplate = true

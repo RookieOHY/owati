@@ -35,8 +35,11 @@ func pngData(_ rep: NSBitmapImageRep) -> Data {
 
 let icon22 = rasterize(svg, px: 22)
 let icon44 = rasterize(svg, px: 44)
+// 大图源 界面里按小尺寸(如28pt)绘制时缩小采样 不会像小图放大那样糊
+let icon128 = rasterize(svg, px: 128)
 try pngData(icon22).write(to: outDir.appendingPathComponent("\(stem)-22.png"))
 try pngData(icon44).write(to: outDir.appendingPathComponent("\(stem)-44.png"))
+try pngData(icon128).write(to: outDir.appendingPathComponent("\(stem)-128.png"))
 
 // 黑色 glyph 换色（预览暗色菜单栏用）
 func tinted(_ rep: NSBitmapImageRep, _ color: NSColor) -> NSImage {
@@ -81,4 +84,4 @@ box(white44, 120, 14, 44)
 
 NSGraphicsContext.restoreGraphicsState()
 try pngData(prev).write(to: outDir.appendingPathComponent("\(stem)-preview.png"))
-print("✅ 已生成：demo/png/\(stem)-22.png, \(stem)-44.png, \(stem)-preview.png")
+print("✅ 已生成：demo/png/\(stem)-22.png, \(stem)-44.png, \(stem)-128.png, \(stem)-preview.png")
