@@ -3,7 +3,9 @@
 set -e
 cd "$(dirname "$0")/.."
 APP=build/owati.app
-VERSION="0.1.0"
+# 版本号: Actions打tag时取tag名(v0.1.1 -> 0.1.1) 本地默认0.1.0
+VERSION="${GITHUB_REF_NAME#v}"
+[ -z "$VERSION" ] && VERSION="0.1.0"
 
 # 1. release 构建
 swift build -c release

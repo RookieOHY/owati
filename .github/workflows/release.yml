@@ -1,0 +1,24 @@
+# 推 v* tag 自动构建并挂 Release
+# HealthTick同款流程: push tag -> 云端swift构建 -> package.sh -> DMG上传
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  package:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建并打包
+        run: ./Scripts/package.sh
+
+      - name: 从tag取版本号
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 上传DMG到Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/owati-${{ steps.ver.outputs.version }}.dmg
