@@ -59,7 +59,6 @@ struct PanelView: View {
                         HStack(alignment: .center, spacing: 8) {
                             logoBreath
                             Spacer()
-                            shareBtn
                             topRightDate(ctx.date)
                         }
                         // 圆环 + 环下三列数据
@@ -67,6 +66,18 @@ struct PanelView: View {
                             WaveRing(progress: consumedML / Double(todayGoal),
                                      consumedML: consumedML, goalML: todayGoal,
                                      celebrate: state.celebrate)
+                                .contentShape(Circle())
+                                .onTapGesture { logDrink(config.cupML) }
+                            // 快捷记录 三等分通栏 图标+毫升数
+                            HStack(spacing: 8) {
+                                presetButton("mug.fill", "一杯", config.cupML, id: "杯")
+                                presetButton("takeoutbag.and.cup.and.straw.fill", "一瓶", config.bottleML, id: "瓶")
+                                presetButton("plus.circle", "自定义", nil, id: "自定义")
+                            }
+                            // 自定义量记录输入行 点"自定义"展开
+                            if state.editingCustom {
+                                customDrinkRow
+                            }
                             // 三列数据
                             HStack(spacing: 0) {
                                 statCol("\(db.todayCups()) 杯", "杯数")
@@ -140,6 +151,16 @@ struct PanelView: View {
         // 钉在窗口顶部 高度跳变时内容不整体位移 不会从光标底下扫出悬停
         .frame(maxHeight: .infinity, alignment: .top)
         .onChange(of: state.panelHeight) { _ in syncWindowHeight() }
+        // 面板一收起(失key) 今日详情恢复折叠 下次打开从干净状态开始
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            guard let w = note.object as? NSWindow,
+                  !w.styleMask.contains(.titled), w.frame.height > 80, w.frame.width <= 400 else { return }
+            state.showDetail = false
+            state.editingCustom = false   // 自定义行同样收起 输入清空
+            state.customText = ""
+            state.editingId = nil   // 行内ml编辑取消
+            state.editingText = ""
+        }
     }
 
     // 圆角矩形轮廓 从顶部中央起笔顺时针 point(in:t:) 按周长等比取点 供刻度/动点定位
@@ -187,7 +208,8 @@ struct PanelView: View {
                 let arcLen = Double.pi * Double(r) / 2
                 let rightEdge = Double((rect.maxY - r) - (rect.minY + r))
                 let bottomEdge = Double((rect.maxX - r) - (rect.minX + r))
-                let perimeter = 2 * (topHalf + arcLen + rightEdge + arcLen + bottomEdge)
+                // 周长=顶半×2+四弧+右边×2+下边 之前下边多算一遍 高进度会提前画满
+                let perimeter = 2 * topHalf + 4 * arcLen + 2 * rightEdge + bottomEdge
                 let d0 = max(0, min(from, 1)) * perimeter
                 let d1 = max(0, min(to, 1)) * perimeter
                 var p = Path()
@@ -243,7 +265,8 @@ struct PanelView: View {
             let arc = .pi * r / 2
             let rightEdge = (rect.maxY - r) - (rect.minY + r)
             let bottomEdge = (rect.maxX - r) - (rect.minX + r)
-            let perimeter = 2 * (topHalf + arc + rightEdge + arc + bottomEdge)
+            // 周长=顶半×2+四弧+右边×2+下边 下边只走一遍 与 PartialShape 保持一致
+            let perimeter = 2 * topHalf + 4 * arc + 2 * rightEdge + bottomEdge
             var d = max(0, min(t, 1)) * perimeter
             func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { .init(x: x, y: y) }
             func arcPt(_ cx: CGFloat, _ cy: CGFloat, _ deg: Double) -> CGPoint {
@@ -303,6 +326,142 @@ struct PanelView: View {
             // 峰值辉光 + 微缩放
             .shadow(color: .accentColor.opacity(0.5 * s), radius: 5)
             .scaleEffect(1 + 0.05 * s)
+        }
+    }
+
+    // 记一笔 唯一入口 面板立即刷新 误点可撤销
+    func logDrink(_ ml: Int, type: DrinkType = .water) {
+        let id = db.addDrink(ml, type: type)
+        guard id != 0 else { return }
+        state.drinkPulse += 1
+        // 撤销条显示水合换算后的值 和环进度同一口径
+        let hydrated = Int((Double(ml) * type.ratio).rounded())
+        let name = type == .water ? "" : "\(type.name) "
+        state.setUndo(.added(id: id), text: "已记录 \(name)\(hydrated) ml")
+    }
+
+    // 补记 指定分钟前 同样可撤销（暂无入口 备用）
+    func logBack(_ minutes: Int, _ ml: Int) {
+        let ts = Date().addingTimeInterval(Double(-minutes) * 60)
+        let id = db.restoreDrink(ts: ts, ml: ml)
+        guard id != 0 else { return }
+        state.drinkPulse += 1
+        state.setUndo(.added(id: id), text: "已补记 \(ml) ml")
+    }
+
+    // 自定义量记录行 单行 类型循环切换+输入框+系数+换算+记下
+    var customDrinkRow: some View {
+        HStack(spacing: 5) {
+            // 类型选择器 单击循环切换 水→咖啡→茶→牛奶→果汁→水
+            Button {
+                let all = DrinkType.allCases
+                if let i = all.firstIndex(of: state.customType) {
+                    state.customType = all[(i + 1) % all.count]
+                }
+            } label: {
+                Text(state.customType.emoji)
+                    .font(.system(size: 12))
+                    .frame(width: 26, height: 26)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(.plain)
+            .help("点击切换饮料类型 当前：\(state.customType.name)")
+            TextField("1-5000", text: Binding(
+                get: { state.customText },
+                set: {
+                    let digits = $0.filter { $0.isNumber }
+                    // 超5000立即钳到5000 显示即所得
+                    if let v = Int(digits), v > 5000 {
+                        state.customText = "5000"
+                    } else {
+                        state.customText = digits
+                    }
+                }
+            ))
+            .textFieldStyle(.plain)
+            .font(.system(size: 12, weight: .semibold))
+            .frame(width: 50)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            .onSubmit { commitCustomDrink() }
+            .onExitCommand { state.editingCustom = false }
+            // 空态显示系数 有输入显示换算结果 共用一个槽位 保证最坏情况不超宽
+            if let v = Int(state.customText), v >= 1 {
+                Text("\(Int((Double(v) * state.customType.ratio).rounded())) ml")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.accentColor)
+                    .monospacedDigit()
+                    .fixedSize()
+            } else {
+                Text("×\(Int(state.customType.ratio * 100))%")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .fixedSize()
+            }
+            Spacer(minLength: 4)
+            Button {
+                commitCustomDrink()
+            } label: {
+                Text("记")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.accentColor)
+                    .frame(width: 24, height: 24)
+                    .background(Color.accentColor.opacity(0.12), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("记下")
+            .help("记下")
+        }
+    }
+
+    // 提交自定义量 校验 1-5000
+    func commitCustomDrink() {
+        defer {
+            state.editingCustom = false
+            state.customText = ""
+        }
+        guard let ml = Int(state.customText.trimmingCharacters(in: .whitespaces)),
+              ml >= 1, ml <= 5000 else { return }
+        logDrink(ml, type: state.customType)
+    }
+
+    // 快捷记录按钮 幽灵样式 细描边浅字 悬停才亮 不和大环抢戏
+    // ml为nil时不显示数字（自定义按钮用） 三等分通栏 文字不换行
+    func presetButton(_ icon: String, _ title: String, _ ml: Int?, id: String) -> some View {
+        Button {
+            if let ml {
+                logDrink(ml)
+            } else {
+                // 再点一次收起
+                state.editingCustom.toggle()
+                state.customText = ""
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .medium))
+                Text(ml.map { String($0) } ?? title)
+                    .font(.system(size: 12, weight: .medium))
+                    .monospacedDigit()
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(height: 30)
+            .frame(maxWidth: .infinity)
+            .foregroundColor(state.hoverBtn == id ? .accentColor : .secondary)
+            .background(state.hoverBtn == id ? AnyShapeStyle(Color.accentColor.opacity(0.08)) : AnyShapeStyle(.clear),
+                        in: RoundedRectangle(cornerRadius: 9))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(state.hoverBtn == id ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.12),
+                                  lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { h in
+            state.hoverBtn = h ? id : (state.hoverBtn == id ? nil : state.hoverBtn)
         }
     }
 
@@ -460,9 +619,8 @@ struct PanelView: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 0) {
                             Text("今天是 ")
-                                .font(.system(size: 11))
                             Text("周五")
-                                .font(.system(size: 14, weight: .semibold))
+                                .fontWeight(.semibold)
                                 .foregroundColor(.accentColor)
                         }
                         // 重点线 压在周五正下方
@@ -473,13 +631,13 @@ struct PanelView: View {
                     }
                 } else {
                     Text("今天不是周五")
-                        .font(.system(size: 11))
                 }
             default:
                 Text(Self.dayFormat.string(from: date))
-                    .font(.system(size: 11))
             }
         }
+        // 三种模式字号统一 11pt
+        .font(.system(size: 11))
         .foregroundColor(.secondary)
         .contentShape(Rectangle())
         .onTapGesture { state.dateMode = (state.dateMode + 1) % 3 }

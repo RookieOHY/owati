@@ -2,7 +2,8 @@ import SwiftUI
 
 // 最近一次可撤销的操作
 enum UndoAction {
-    case deleted(id: Int64, date: Date, ml: Int)  // 删除 按原时间插回
+    case added(id: Int64)                         // 新增 直接删行
+    case deleted(id: Int64, date: Date, ml: Int, type: DrinkType)  // 删除 按原时间插回
     case edited(id: Int64, oldML: Int)            // 修改 回退到旧值
 }
 
@@ -26,7 +27,11 @@ final class PanelState: ObservableObject {
     @Published var hoverBtn: String? = nil   // 底栏悬停的按钮名 悬停亮蓝
     @Published var editingGoal = false       // 正在改今日目标
     @Published var editingGoalText = ""
+    @Published var editingCustom = false     // 正在自定义量记录
+    @Published var customText = ""
+    @Published var customType: DrinkType = .water  // 自定义记录选的类型
     @Published var celebrate = false      // 达标庆祝 一次性
+    @Published var drinkPulse = 0         // 记录一笔后+1 驱动面板立即刷新
     @Published var panelHeight: CGFloat = 0   // 内容实测高度 用于同步窗口
     @Published var layoutJumping = false      // 窗口跳变中 装饰层暂停绘制防错位闪现
     var pageHeight: CGFloat = 0               // 主页滑动区高度 实验室页钉这个高度 滑动期间窗口不变

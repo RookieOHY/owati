@@ -32,10 +32,12 @@ extension PanelView {
                 state.setHover(nil)
                 state.hoverRow = nil
             } label: {
-                HStack {
+                HStack(spacing: 6) {
                     Text("今日详情")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                    // 分享按钮 紧跟标题后面 打开今日成就卡
+                    shareBtn
                     Spacer()
                     // 胶囊小开关 朝下=展开 朝上=收起
                     Image(systemName: "chevron.down")
@@ -60,7 +62,8 @@ extension PanelView {
                 } else {
                     // 竖轨串起每一条 时间左 量右 悬停可删 可改ml
                     // 每行20pt(16内容+4上下距) 少时贴内容 多时3行封顶滚动
-                    ScrollView {
+                    // showsIndicators:false 从AppKit层不创建指示器 gutter也不预留 scrollIndicators在预留gutter场景不生效
+                    ScrollView(showsIndicators: false) {
                         VStack(spacing: 0) {
                         ForEach(Array(records.enumerated()), id: \.element.id) { i, r in
                             // 隔太久插一条间隔标注
@@ -82,8 +85,8 @@ extension PanelView {
         }
     }
 
-    // 时间线单行 时间/轨点/量/删除
-    func timelineRow(_ r: (id: Int64, date: Date, ml: Int)) -> some View {
+    // 时间线单行 时间/轨点/类型/量/删除
+    func timelineRow(_ r: (id: Int64, date: Date, ml: Int, type: DrinkType)) -> some View {
         HStack(spacing: 8) {
             Text(Self.timeFormat.string(from: r.date))
                 .font(.system(size: 10))
@@ -99,9 +102,18 @@ extension PanelView {
                     .frame(width: 5, height: 5)
             }
             .frame(height: 16)
-            Image(systemName: "drop.fill")
-                .font(.system(size: 8))
-                .foregroundColor(Color.accentColor.opacity(0.55))
+            // 类型图标 水是蓝水滴 其他显示emoji 统一盒子保证对齐
+            ZStack {
+                if r.type == .water {
+                    Image(systemName: "drop.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(Color.accentColor.opacity(0.55))
+                } else {
+                    Text(r.type.emoji)
+                        .font(.system(size: 9))
+                }
+            }
+            .frame(width: 14, height: 14)
             Spacer()
             // 量 点击进编辑 回车保存 Esc取消
             if state.editingId == r.id {
@@ -131,7 +143,7 @@ extension PanelView {
             ZStack {
                 if state.hoverRow == r.id {
                     Button {
-                        state.setUndo(.deleted(id: r.id, date: r.date, ml: r.ml),
+                        state.setUndo(.deleted(id: r.id, date: r.date, ml: r.ml, type: r.type),
                                       text: "已删除 \(r.ml) ml")
                         db.deleteDrink(id: r.id)
                     } label: {
@@ -177,8 +189,10 @@ extension PanelView {
     func performUndo() {
         guard let u = state.undo else { return }
         switch u {
-        case .deleted(_, let date, let ml):
-            db.restoreDrink(ts: date, ml: ml)
+        case .added(let id):
+            db.deleteDrink(id: id)
+        case .deleted(_, let date, let ml, let type):
+            db.restoreDrink(ts: date, ml: ml, type: type)
         case .edited(let id, let oldML):
             db.updateDrink(id: id, ml: oldML)
         }

@@ -40,6 +40,13 @@ final class AppConfig: ObservableObject {
     @Published var didOnboarding: Bool {
         didSet { ud.set(didOnboarding, forKey: "didOnboarding") }
     }
+    // 快捷杯量 一杯/一瓶 实验室可改
+    @Published var cupML: Int {
+        didSet { ud.set(cupML, forKey: "cupML") }
+    }
+    @Published var bottleML: Int {
+        didSet { ud.set(bottleML, forKey: "bottleML") }
+    }
 
     private init() {
         let d = UserDefaults.standard
@@ -52,6 +59,8 @@ final class AppConfig: ObservableObject {
         restStart = d.string(forKey: "restStart") ?? "12:00"
         restEnd = d.string(forKey: "restEnd") ?? "13:00"
         didOnboarding = d.bool(forKey: "didOnboarding")
+        cupML = d.object(forKey: "cupML") as? Int ?? 250
+        bottleML = d.object(forKey: "bottleML") as? Int ?? 500
         // 兜底 空的提醒日回落到工作日
         if remindDays.isEmpty { remindDays = [2, 3, 4, 5, 6] }
     }
