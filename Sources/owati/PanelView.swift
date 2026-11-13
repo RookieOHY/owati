@@ -724,12 +724,16 @@ struct PanelView: View {
     }
 
     // 右卡 下次提醒 点击切倒计时 外圈进度=临近下次提醒的程度
+    // 休眠态(窗口外/非提醒日/勿扰) 显示休眠占位替代幻影数字
     func remindCard(_ now: Date) -> some View {
         let remainSec = max(0, state.nextRemind.timeIntervalSince(now))
         let countdown = 1 - remainSec / state.remindInterval
-        return panelCard(state.showCountdown ? "倒计时" : "下次提醒", remindText(now),
-                         progress: min(max(countdown, 0), 1), countdown: true)
-            .onTapGesture { state.showCountdown.toggle() }
+        return state.remindSleeping(now)
+            ? panelCard("提醒已休眠", "\(config.remindStart) 恢复", progress: 0)
+                .onTapGesture { state.showCountdown.toggle() }
+            : panelCard(state.showCountdown ? "倒计时" : "下次提醒", remindText(now),
+                        progress: min(max(countdown, 0), 1), countdown: true)
+                .onTapGesture { state.showCountdown.toggle() }
     }
 
     func panelCard(_ title: String, _ value: String, progress: Double? = nil, countdown: Bool = false) -> some View {

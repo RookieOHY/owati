@@ -252,6 +252,11 @@ final class PanelState: ObservableObject {
         quickLog(ml: AppConfig.shared.cupML)
     }
 
+    // 固定闸门不过(窗口外/非提醒日/勿扰段) = 休眠态 面板显示休眠占位
+    func remindSleeping(_ now: Date) -> Bool {
+        !remindAllowed(now)
+    }
+
     // 每5秒巡检一次 到点才动作
     private func remindTick() {
         let now = Date()
@@ -288,7 +293,7 @@ final class PanelState: ObservableObject {
             scheduleNext(from: now)
             return
         }
-        // 配置闸门 时间段/提醒日/休息段
+        // 配置闸门 时间段/提醒日/勿扰
         guard remindAllowed(now) else {
             scheduleNext(from: now)
             return
@@ -331,7 +336,7 @@ final class PanelState: ObservableObject {
     }
 
     // 提醒时段判断 时间段内+提醒日+非休息段
-    private func remindAllowed(_ now: Date) -> Bool {
+    func remindAllowed(_ now: Date) -> Bool {
         let c = AppConfig.shared
         let cal = Calendar.current
         guard c.remindDays.contains(cal.component(.weekday, from: now)) else { return false }
