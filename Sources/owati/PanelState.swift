@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreGraphics
 
 // 最近一次可撤销的操作
 enum UndoAction {
@@ -34,11 +35,19 @@ final class PanelState: ObservableObject {
     @Published var drinkPulse = 0         // 记录一笔后+1 驱动面板立即刷新
     @Published var panelHeight: CGFloat = 0   // 内容实测高度 用于同步窗口
     @Published var layoutJumping = false      // 窗口跳变中 装饰层暂停绘制防错位闪现
+    @Published var settingsTab = 0        // 设置窗口侧栏 0音效 1提醒 2关于
+    @Published var settingsSearch = ""    // 设置窗口搜索框
+    @Published var updateStatus = ""      // 检查更新结果文案
     var pageHeight: CGFloat = 0               // 主页滑动区高度 实验室页钉这个高度 滑动期间窗口不变
     var wasGoalReached = false            // 上次是否已达标 算跨越用
-    // 假数据 下次提醒按启动时间+间隔算 之后由提醒器接管
-    let nextRemind = Date().addingTimeInterval(45 * 60)
-    let remindInterval: TimeInterval = 45 * 60  // 提醒间隔 倒计时环算进度用
+    // 下次提醒时间 引擎驱动 面板右卡显示/倒计时共用
+    @Published var nextRemind = Date().addingTimeInterval(45 * 60)
+    var remindInterval: TimeInterval = 45 * 60  // 间隔秒 倒计时环算进度用
+    @Published var remindCardText = ""          // 提醒卡文案 该喝水了/回来啦
+    @Published var remindCardVisible = false    // 提醒卡在不在
+    private var remindTimer: Timer?
+    private var afkCatchup = false              // 刚才因为离开跳过了 回来要补
+    private let afkThreshold: TimeInterval = 300
 
     private var hoverWork: DispatchWorkItem?
     private var undoToken = 0
@@ -127,5 +136,102 @@ final class PanelState: ObservableObject {
         undoWork?.cancel()
         undo = nil
         undoText = ""
+    }
+
+    // MARK: 提醒引擎
+    // 进程一起来就跑 与面板开不开无关
+    func startRemindEngine() {
+        scheduleNext(from: Date())
+        remindTimer?.invalidate()
+        remindTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.remindTick()
+        }
+    }
+
+    // 排下次提醒
+    func scheduleNext(from: Date) {
+        let min = AppConfig.shared.remindIntervalMin
+        remindInterval = TimeInterval(min * 60)
+        nextRemind = from.addingTimeInterval(remindInterval)
+    }
+
+    // 记了一杯 从现在重新计时 收卡
+    func markLogged() {
+        scheduleNext(from: Date())
+        afkCatchup = false
+        ReminderCard.shared.hide()
+    }
+
+    // 提醒卡上的稍后 10分钟后再来
+    func snoozeCard(_ minutes: Int = 10) {
+        nextRemind = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        afkCatchup = false
+        ReminderCard.shared.hide()
+    }
+
+    // 快速记一杯 提醒卡专用 一杯水量+水
+    func quickLogCup() {
+        let c = AppConfig.shared
+        let id = Database.shared.addDrink(c.cupML, type: .water)
+        guard id != 0 else { return }
+        SoundPlayer.shared.playLog()   // 和面板同一声 开罐音
+        drinkPulse += 1
+        setUndo(.added(id: id), text: "已记录 \(c.cupML) ml")
+        // 先重新计时 但卡留着 让进度条动完 0.6秒后再收
+        scheduleNext(from: Date())
+        afkCatchup = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            ReminderCard.shared.hide()
+        }
+    }
+
+    // 每5秒巡检一次 到点才动作
+    private func remindTick() {
+        let now = Date()
+        let idle = idleSeconds()
+        // 离开期间跳过的 人回来了补一次
+        if afkCatchup && idle < afkThreshold && !remindCardVisible {
+            afkCatchup = false
+            scheduleNext(from: now)
+            ReminderCard.shared.show(text: "回来啦 先喝杯水")
+            return
+        }
+        guard now >= nextRemind, !remindCardVisible else { return }
+        // 人不在 本次静默滑过 等回来补
+        if idle >= afkThreshold {
+            afkCatchup = true
+            scheduleNext(from: now)
+            return
+        }
+        // 配置闸门 时间段/提醒日/休息段
+        guard remindAllowed(now) else {
+            scheduleNext(from: now)
+            return
+        }
+        scheduleNext(from: now)
+        ReminderCard.shared.show(text: "该喝水了")
+    }
+
+    // 用户键鼠空闲秒数 无需任何权限
+    private func idleSeconds() -> TimeInterval {
+        let types: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown,
+                                    .mouseMoved, .keyDown, .scrollWheel]
+        return types.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
+            .min() ?? 0
+    }
+
+    // 提醒时段判断 时间段内+提醒日+非休息段
+    private func remindAllowed(_ now: Date) -> Bool {
+        let c = AppConfig.shared
+        let cal = Calendar.current
+        guard c.remindDays.contains(cal.component(.weekday, from: now)) else { return false }
+        func mins(_ s: String) -> Int {
+            let p = s.split(separator: ":").compactMap { Int($0) }
+            return p.count == 2 ? p[0] * 60 + p[1] : 0
+        }
+        let nowMin = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
+        guard nowMin >= mins(c.remindStart), nowMin <= mins(c.remindEnd) else { return false }
+        if c.restEnabled, nowMin >= mins(c.restStart), nowMin <= mins(c.restEnd) { return false }
+        return true
     }
 }

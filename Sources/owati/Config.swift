@@ -1,5 +1,7 @@
 import SwiftUI
 import Combine
+import AppKit
+import ServiceManagement
 
 // 全局配置 存 UserDefaults
 final class AppConfig: ObservableObject {
@@ -47,6 +49,32 @@ final class AppConfig: ObservableObject {
     @Published var bottleML: Int {
         didSet { ud.set(bottleML, forKey: "bottleML") }
     }
+    // 记录成功的开罐音效开关
+    @Published var soundOn: Bool {
+        didSet { ud.set(soundOn, forKey: "soundOn") }
+    }
+    // 记录音效种类 Sfx.rawValue
+    @Published var soundEffect: String {
+        didSet { ud.set(soundEffect, forKey: "soundEffect") }
+    }
+    // 外观 0跟随系统 1浅色 2深色
+    @Published var appearance: Int {
+        didSet { ud.set(appearance, forKey: "appearance"); Self.applyAppearance(appearance) }
+    }
+    // 自动检查更新
+    @Published var checkUpdates: Bool {
+        didSet { ud.set(checkUpdates, forKey: "checkUpdates") }
+    }
+    // 开机自启动 SMAppService 真实状态为准
+    @Published var launchAtLogin: Bool {
+        didSet {
+            do {
+                if launchAtLogin { try SMAppService.mainApp.register() }
+                else { try SMAppService.mainApp.unregister() }
+            } catch { /* 裸可执行(未打包)注册不了 打包成app后生效 */ }
+            ud.set(SMAppService.mainApp.status == .enabled, forKey: "launchAtLogin")
+        }
+    }
 
     private init() {
         let d = UserDefaults.standard
@@ -61,7 +89,18 @@ final class AppConfig: ObservableObject {
         didOnboarding = d.bool(forKey: "didOnboarding")
         cupML = d.object(forKey: "cupML") as? Int ?? 250
         bottleML = d.object(forKey: "bottleML") as? Int ?? 500
+        soundOn = d.object(forKey: "soundOn") as? Bool ?? true
+        soundEffect = d.string(forKey: "soundEffect") ?? Sfx.canFizz.rawValue
+        appearance = d.object(forKey: "appearance") as? Int ?? 0
+        checkUpdates = d.object(forKey: "checkUpdates") as? Bool ?? true
+        launchAtLogin = d.object(forKey: "launchAtLogin") as? Bool ?? false
         // 兜底 空的提醒日回落到工作日
         if remindDays.isEmpty { remindDays = [2, 3, 4, 5, 6] }
+        Self.applyAppearance(appearance)
+    }
+
+    // 外观切换 跟随时清nil交给系统
+    static func applyAppearance(_ v: Int) {
+        NSApplication.shared.appearance = v == 1 ? NSAppearance(named: .aqua) : v == 2 ? NSAppearance(named: .darkAqua) : nil
     }
 }

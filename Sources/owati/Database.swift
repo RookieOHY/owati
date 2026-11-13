@@ -97,7 +97,8 @@ final class Database {
         sqlite3_bind_text(stmt, 2, now, -1, transient)
         sqlite3_bind_text(stmt, 3, today, -1, transient)
         sqlite3_bind_text(stmt, 4, type.rawValue, -1, transient)
-        sqlite3_step(stmt)
+        // step必须成功 否则last_insert_rowid会返回上一次的旧id 假成功
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return 0 }
         return sqlite3_last_insert_rowid(db)
     }
 

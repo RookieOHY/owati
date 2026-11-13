@@ -128,7 +128,16 @@ struct PanelView: View {
                             state.hoverRow = nil
                             withAnimation(.easeOut(duration: 0.25)) { state.showLab.toggle() }
                         }
-                        controlButton("设置", "gear", "5") { OwatiApp.showOnboarding() }
+                        controlButton("设置", "gear", "5") {
+                            state.setHover(nil)
+                            state.hoverRow = nil
+                            // HealthTick式 先收面板再弹设置窗 面板挡不住视线
+                            for w in NSApp.windows
+                            where !w.styleMask.contains(.titled) && w.frame.width <= 400 && w.frame.height > 80 {
+                                w.orderOut(nil)
+                            }
+                            SettingsWindow.show()
+                        }
                         controlButton("退出", "power", "q") { NSApp.terminate(nil) }
                     }
                 }
@@ -333,6 +342,8 @@ struct PanelView: View {
     func logDrink(_ ml: Int, type: DrinkType = .water) {
         let id = db.addDrink(ml, type: type)
         guard id != 0 else { return }
+        SoundPlayer.shared.playLog()   // 记录成功才有声音
+        state.markLogged()   // 刚喝过水 提醒重新计时
         state.drinkPulse += 1
         // 撤销条显示水合换算后的值 和环进度同一口径
         let hydrated = Int((Double(ml) * type.ratio).rounded())

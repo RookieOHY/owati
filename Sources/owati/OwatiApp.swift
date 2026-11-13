@@ -13,6 +13,8 @@ struct OwatiApp: App {
         menuIcon = icon
         // 确保数据库已开
         _ = Database.shared
+        // 提醒引擎 进程级常驻
+        PanelState.shared.startRemindEngine()
         // 首次启动 弹出四步设置向导
         if !AppConfig.shared.didOnboarding {
             DispatchQueue.main.async { Self.showOnboarding() }
