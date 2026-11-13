@@ -149,18 +149,24 @@ struct AchievementView: View {
                 }
             }
             .frame(width: 44, height: 30)
-            // 展台上的藏品 解锁=悬浮呼吸 未解锁=绒布罩着 悬停揭幕
+            // 展台上的藏品 解锁=悬浮呼吸 未解锁=剧院幕布拉开揭幕
             ZStack {
                 if got {
                     floatingMedal(b, size: 46, phase: Double(idx) * 0.9)
                 } else {
-                    ZStack {
-                        medallion(b, got: false, size: 44)   // 剪影 默认被布盖住
-                        DomeShape()
-                            .fill(Color.primary.opacity(hovered ? 0.03 : 0.12))
-                            .overlay(DomeShape().stroke(Color.primary.opacity(0.14), lineWidth: 1))
-                    }
-                    .frame(height: 46)
+                    medallion(b, got: false, size: 44)
+                        .overlay {
+                            ZStack {
+                                curtain(false)
+                                    .offset(x: hovered ? -26 : 0)
+                                    .opacity(hovered ? 0.05 : 1)
+                                curtain(true)
+                                    .offset(x: hovered ? 26 : 0)
+                                    .opacity(hovered ? 0.05 : 1)
+                            }
+                            .frame(width: 54, height: 56)
+                        }
+                        .frame(height: 46)
                 }
             }
             .frame(height: 46)
@@ -209,6 +215,27 @@ struct AchievementView: View {
             medallion(b, got: true, size: size)
                 .offset(y: 1.5 * sin(t + phase))
         }
+    }
+
+    // 一片剧院绒布 深夜蓝渐变+竖向褶皱纹 右片水平镜像
+    func curtain(_ mirror: Bool) -> some View {
+        let shape = CurtainHalf()
+        return shape
+            .fill(LinearGradient(colors: [Color(hex: 0x1B3A66), Color(hex: 0x10233F)],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay(
+                // 褶皱纹 竖细条 用shape自身mask住不出布外
+                HStack(spacing: 7) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Rectangle()
+                            .fill(Color.white.opacity(0.09))
+                            .frame(width: 1.5)
+                    }
+                }
+                .mask(shape)
+            )
+            .overlay(shape.stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+            .scaleEffect(x: mirror ? -1 : 1)
     }
 
     // 奖章 统一圆底模板+主题图形 解锁=蓝渐变 锁定=灰剪影
@@ -325,16 +352,23 @@ struct LightCone: Shape {
     }
 }
 
-// 绒布罩 半圆顶+直边落底 盖住未解锁的奖章
-struct DomeShape: Shape {
+// 剧院幕布左片 顶部横杆垂下 中缝在右 外沿在左 下摆三段波浪
+// 右片由调用方水平镜像
+struct CurtainHalf: Shape {
     nonisolated func path(in rect: CGRect) -> Path {
-        let r = rect.width / 2
         var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
-        p.addArc(center: CGPoint(x: rect.midX, y: rect.minY + r), radius: r,
-                 startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        let hemY = rect.maxY - 6
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: hemY))
+        // 从中缝走向外沿的波浪下摆
+        let seg = rect.width / 3
+        var x = rect.maxX
+        for _ in 0..<3 {
+            let nx = x - seg
+            p.addQuadCurve(to: CGPoint(x: nx, y: hemY), control: CGPoint(x: x - seg / 2, y: hemY + 4))
+            x = nx
+        }
         p.closeSubpath()
         return p
     }
