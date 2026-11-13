@@ -6,6 +6,8 @@ APP=build/owati.app
 # 版本号: Actions打tag时取tag名(v0.1.1 -> 0.1.1) 本地默认0.1.0
 VERSION="${GITHUB_REF_NAME#v}"
 [ -z "$VERSION" ] && VERSION="0.1.0"
+# 云端双架构时 Actions注入ARCH 产物名带后缀区分
+[ -n "$ARCH" ] && SUFFIX="-$ARCH"
 
 # 1. release 构建
 swift build -c release
@@ -48,8 +50,8 @@ rm -rf build/dmg-staging
 mkdir -p build/dmg-staging
 cp -R "$APP" build/dmg-staging/
 ln -s /Applications build/dmg-staging/Applications
-rm -f "build/owati-$VERSION.dmg"
-hdiutil create -volname owati -srcfolder build/dmg-staging -ov -format UDZO "build/owati-$VERSION.dmg" -quiet
+rm -f "build/owati-$VERSION$SUFFIX.dmg"
+hdiutil create -volname owati -srcfolder build/dmg-staging -ov -format UDZO "build/owati-$VERSION$SUFFIX.dmg" -quiet
 
 echo "✅ 打包完成: $APP (版本 $VERSION)"
-echo "   分发包: build/owati-$VERSION.dmg"
+echo "   分发包: build/owati-$VERSION$SUFFIX.dmg"

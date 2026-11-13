@@ -1,5 +1,5 @@
-# 推 v* tag 自动构建并挂 Release
-# HealthTick同款流程: push tag -> 云端swift构建 -> package.sh -> DMG上传
+# 推 v* tag 自动构建并挂 Release 双架构: arm64(M系) + x86_64(Intel)
+# HealthTick同款: Apple Silicon / Intel 两个安装包
 name: Release
 on:
   push:
@@ -7,12 +7,21 @@ on:
 
 jobs:
   package:
-    runs-on: macos-14
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest    # M系
+            arch: aarch64
+          - runner: macos-13        # Intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
       - name: 构建并打包
         run: ./Scripts/package.sh
+        env:
+          ARCH: ${{ matrix.arch }}
 
       - name: 从tag取版本号
         id: ver
