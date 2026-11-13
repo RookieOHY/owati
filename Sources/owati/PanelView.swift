@@ -130,7 +130,16 @@ struct PanelView: View {
                             }
                             StatsWindow.show()
                         }
-                        controlButton("成就", "trophy", "2") { /* 成就页后续做 */ }
+                        controlButton("成就", "trophy", "2") {
+                            state.setHover(nil)
+                            state.hoverRow = nil
+                            // 与设置同款 先收面板再弹窗 面板挡不住视线
+                            for w in NSApp.windows
+                            where !w.styleMask.contains(.titled) && w.frame.width <= 400 && w.frame.height > 80 {
+                                w.orderOut(nil)
+                            }
+                            AchievementWindow.show()
+                        }
                         controlButton("帮助", "questionmark.circle", "3") { /* 帮助页后续做 */ }
                         controlButton("实验室", "wand.and.stars", "4", active: state.showLab) {
                             state.setHover(nil)
@@ -168,6 +177,12 @@ struct PanelView: View {
         )
         // 钉在窗口顶部 高度跳变时内容不整体位移 不会从光标底下扫出悬停
         .frame(maxHeight: .infinity, alignment: .top)
+        // 徽章解锁toast 浮在顶部 不占布局
+        .overlay(alignment: .top) {
+            if state.badgeToastVisible {
+                badgeToastCard
+            }
+        }
         .onChange(of: state.panelHeight) { _ in syncWindowHeight() }
         // 面板一收起(失key) 今日详情恢复折叠 下次打开从干净状态开始
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
@@ -354,6 +369,7 @@ struct PanelView: View {
         SoundPlayer.shared.playLog()   // 记录成功才有声音
         state.markLogged()   // 刚喝过水 提醒重新计时
         state.drinkPulse += 1
+        state.evaluateBadges()   // 解锁时点
         // 撤销条显示水合换算后的值 和环进度同一口径
         let hydrated = Int((Double(ml) * type.ratio).rounded())
         let name = type == .water ? "" : "\(type.name) "
@@ -366,6 +382,7 @@ struct PanelView: View {
         let id = db.restoreDrink(ts: ts, ml: ml)
         guard id != 0 else { return }
         state.drinkPulse += 1
+        state.evaluateBadges()
         state.setUndo(.added(id: id), text: "已补记 \(ml) ml")
     }
 
@@ -625,6 +642,7 @@ struct PanelView: View {
         guard let ml = Int(state.editingGoalText.trimmingCharacters(in: .whitespaces)) else { return }
         guard ml >= 500, ml <= 10000 else { return }
         db.setGoalOverride(date: Database.dayFormat.string(from: Date()), ml: ml)
+        state.evaluateBadges()   // 目标变了 单日达标率口径跟着变
     }
 
     // 右上角 点击循环 公历 -> 农历 -> 周五判断
@@ -725,11 +743,16 @@ struct PanelView: View {
     }
 
     // 左卡 剩余量 点击换单位 外圈进度=今日完成度 喝超了按0显示 不出负数
+    // 达标后友好显示: 已达标 / 超额量 替代冷冰冰的 0
     var remainCard: some View {
         let remain = max(0, Double(todayGoal) - consumedML)
-        return panelCard("剩余水量", remainText(remain),
-                         progress: min(consumedML / Double(max(todayGoal, 1)), 1.0))
-            .onTapGesture { state.unitIndex = (state.unitIndex + 1) % 3 }
+        let reached = consumedML >= Double(todayGoal) && todayGoal > 0
+        return reached
+            ? panelCard("喝水", "已达标", progress: min(consumedML / Double(max(todayGoal, 1)), 1.0), icon: "party.popper")
+                .onTapGesture { state.unitIndex = (state.unitIndex + 1) % 3 }
+            : panelCard("剩余水量", remainText(remain),
+                        progress: min(consumedML / Double(max(todayGoal, 1)), 1.0))
+                .onTapGesture { state.unitIndex = (state.unitIndex + 1) % 3 }
     }
 
     // 右卡 下次提醒 点击切倒计时 外圈进度=临近下次提醒的程度
@@ -745,15 +768,27 @@ struct PanelView: View {
                 .onTapGesture { state.showCountdown.toggle() }
     }
 
-    func panelCard(_ title: String, _ value: String, progress: Double? = nil, countdown: Bool = false) -> some View {
+    func panelCard(_ title: String, _ value: String, progress: Double? = nil, countdown: Bool = false, icon: String? = nil) -> some View {
         VStack(alignment: .center, spacing: 3) {
             Text(title)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
-            Text(value)
-                .font(.system(size: 13, weight: .semibold))
-                .monospacedDigit()
+            // 有图标时数值行 图标(产品蓝)+文本
+            if let icon {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(value)
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                }
                 .foregroundColor(.accentColor)
+            } else {
+                Text(value)
+                    .font(.system(size: 13, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundColor(.accentColor)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, 10)

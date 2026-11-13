@@ -145,6 +145,11 @@ final class Database {
                  [Self.dayFormat.string(from: Date())])
     }
 
+    // 全库累计杯数 徽章用
+    func totalCups() -> Int {
+        queryInt("SELECT COUNT(*) FROM drink_records", [])
+    }
+
     // 连续达标天数 今天没达标不算断 从昨天继续数
     func streakDays(goalML: Int) -> Int {
         streakDays(on: Self.dayFormat.string(from: Date()), goalML: goalML)
@@ -153,9 +158,10 @@ final class Database {
     // 连续达标天数(截至某天) 向前回溯 该天没达标不算断
     func streakDays(on target: String, goalML: Int) -> Int {
         var stmt: OpaquePointer?
+        // LIMIT要够百天徽章用 400天封顶
         let sql = """
             SELECT date, CAST(ROUND(COALESCE(SUM(amount_ml * \(Self.ratioCase)), 0)) AS INTEGER)
-            FROM drink_records GROUP BY date ORDER BY date DESC LIMIT 90
+            FROM drink_records GROUP BY date ORDER BY date DESC LIMIT 400
         """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
         defer { sqlite3_finalize(stmt) }

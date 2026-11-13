@@ -41,6 +41,11 @@ final class PanelState: ObservableObject {
     @Published var statsHoverBar: Int? = nil   // 统计柱状图悬停列
     @Published var statsRange = 0         // 统计窗 0近7天 1近30天 卡片跟着切
     @Published var statsHoverCard: Int? = nil  // 统计指标卡悬停序号 驱动浮起动效
+    @Published var achvHoverId: String? = nil  // 成就窗悬停的徽章id
+    @Published var achvDetailId: String? = nil // 成就窗点开的详情徽章id
+    @Published var badgeToastVisible = false   // 解锁toast在不在
+    @Published var badgeToastName = ""         // toast里的徽章名
+    @Published var badgeToastIcon = "trophy.fill"
     @Published var statsChartKind = 0     // 统计每日水合图形态 0水滴 1柱状 2折线 默认水滴
     var pageHeight: CGFloat = 0               // 主页滑动区高度 实验室页钉这个高度 滑动期间窗口不变
     var wasGoalReached = false            // 上次是否已达标 算跨越用
@@ -172,6 +177,52 @@ final class PanelState: ObservableObject {
         undoWork?.cancel()
         undo = nil
         undoText = ""
+    }
+
+    // MARK: 徽章评估
+    // 全部条件实时重算 首次调用只静默建档不弹历史成就 之后新解锁逐条弹toast
+    private var knownBadges: Set<String>? = nil
+    private var pendingToasts: [(name: String, icon: String)] = []
+    private var toastToken = 0
+    private var toastWork: DispatchWorkItem?
+
+    func evaluateBadges() {
+        let earned = Achievements.earnedIDs(db: Database.shared)
+        guard let known = knownBadges else {
+            knownBadges = earned
+            return
+        }
+        guard !earned.isSubset(of: known) else { return }
+        let fresh = earned.subtracting(known)
+        knownBadges = earned
+        for b in Achievements.all where fresh.contains(b.id) {
+            pendingToasts.append((b.name, b.icon))
+        }
+        if !badgeToastVisible { popToast() }
+    }
+
+    // 弹一条3.5秒 多枚排队 上一条收起后接下一条
+    private func popToast() {
+        guard let next = pendingToasts.first else { return }
+        pendingToasts.removeFirst()
+        toastToken += 1
+        let token = toastToken
+        withAnimation(.easeOut(duration: 0.3)) {
+            badgeToastName = next.name
+            badgeToastIcon = next.icon
+            badgeToastVisible = true
+        }
+        SoundPlayer.shared.playLog()   // 复用记录音 轻一声
+        let w = DispatchWorkItem { [weak self] in
+            guard let self, self.toastToken == token else { return }
+            withAnimation(.easeIn(duration: 0.25)) { self.badgeToastVisible = false }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.popToast()
+            }
+        }
+        toastWork?.cancel()
+        toastWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5, execute: w)
     }
 
     // MARK: 提醒引擎
@@ -323,6 +374,7 @@ final class PanelState: ObservableObject {
         skipStreak = 0   // 记录了 跳过连击清零 tips回到温和池
         SoundPlayer.shared.playLog()   // 和面板同一声 开罐音
         drinkPulse += 1
+        evaluateBadges()   // 快速记录也算解锁时点
         setUndo(.added(id: id), text: "已记录 \(ml) ml")
         // 先重新计时 但载体留着 让进度条动完 0.6秒后再收
         scheduleNext(from: Date())

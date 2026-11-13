@@ -146,6 +146,8 @@ extension PanelView {
                         state.setUndo(.deleted(id: r.id, date: r.date, ml: r.ml, type: r.type),
                                       text: "已删除 \(r.ml) ml")
                         db.deleteDrink(id: r.id)
+                        state.drinkPulse += 1
+                        state.evaluateBadges()   // 删了可能回退到未解锁
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 8, weight: .medium))
@@ -197,6 +199,8 @@ extension PanelView {
             db.updateDrink(id: id, ml: oldML)
         }
         state.clearUndo()
+        state.drinkPulse += 1
+        state.evaluateBadges()
     }
 
     // 保存编辑的ml 非法输入直接退出编辑
@@ -210,5 +214,7 @@ extension PanelView {
         guard ml != state.editingOldML else { return }
         db.updateDrink(id: id, ml: ml)
         state.setUndo(.edited(id: id, oldML: state.editingOldML), text: "已改为 \(ml) ml")
+        state.drinkPulse += 1
+        state.evaluateBadges()
     }
 }
