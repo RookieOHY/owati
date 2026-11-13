@@ -61,6 +61,34 @@ final class AppConfig: ObservableObject {
     @Published var appearance: Int {
         didSet { ud.set(appearance, forKey: "appearance"); Self.applyAppearance(appearance) }
     }
+    // 提醒方式 0浮动卡片 1全屏页面
+    @Published var reminderStyle: Int {
+        didSet { ud.set(reminderStyle, forKey: "reminderStyle") }
+    }
+    // 提醒出现音效 苹果系统音效名 空串=跟随记录音效
+    @Published var remindSound: String {
+        didSet { ud.set(remindSound, forKey: "remindSound") }
+    }
+    // 连跳几次后tips换催促款
+    @Published var nudgeSkips: Int {
+        didSet { ud.set(nudgeSkips, forKey: "nudgeSkips") }
+    }
+    // 达标后提醒间隔倍数 1不变 2温和 3更缓
+    @Published var goalIntervalMult: Int {
+        didSet {
+            ud.set(goalIntervalMult, forKey: "goalIntervalMult")
+            // 改节奏立即重排 面板倒计时同步
+            PanelState.shared.scheduleNext(from: Date())
+        }
+    }
+    // 超额静音阈值 0关闭 150/200=超额百分比后彻底安静
+    @Published var overGoalSilence: Int {
+        didSet { ud.set(overGoalSilence, forKey: "overGoalSilence") }
+    }
+    // 会议应用在前台自动暂停提醒
+    @Published var meetingPause: Bool {
+        didSet { ud.set(meetingPause, forKey: "meetingPause") }
+    }
     // 开机自启动 SMAppService 真实状态为准
     @Published var launchAtLogin: Bool {
         didSet {
@@ -88,6 +116,12 @@ final class AppConfig: ObservableObject {
         soundOn = d.object(forKey: "soundOn") as? Bool ?? true
         soundEffect = d.string(forKey: "soundEffect") ?? Sfx.canFizz.rawValue
         appearance = d.object(forKey: "appearance") as? Int ?? 0
+        reminderStyle = d.object(forKey: "reminderStyle") as? Int ?? 0
+        remindSound = d.string(forKey: "remindSound") ?? ""
+        nudgeSkips = d.object(forKey: "nudgeSkips") as? Int ?? 2
+        goalIntervalMult = d.object(forKey: "goalIntervalMult") as? Int ?? 2
+        overGoalSilence = d.object(forKey: "overGoalSilence") as? Int ?? 150
+        meetingPause = d.object(forKey: "meetingPause") as? Bool ?? true
         launchAtLogin = d.object(forKey: "launchAtLogin") as? Bool ?? false
         // 兜底 空的提醒日回落到工作日
         if remindDays.isEmpty { remindDays = [2, 3, 4, 5, 6] }

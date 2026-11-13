@@ -109,8 +109,8 @@ struct SettingsView: View {
             .padding(.bottom, -4)
     }
 
-    // Apple设置风的行 彩色圆角图标+标题+右侧控件 HealthTick: 横14竖7 图标24
-    private func settingsRow(_ icon: String, _ color: Color, _ title: String, @ViewBuilder _ control: () -> some View) -> some View {
+    // Apple设置风的行 彩色圆角图标+标题+可选问号帮助+右侧控件 HealthTick: 横14竖8 图标24
+    private func settingsRow(_ icon: String, _ color: Color, _ title: String, help: String? = nil, @ViewBuilder _ control: () -> some View) -> some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 6)
                 .fill(color.gradient)
@@ -121,11 +121,44 @@ struct SettingsView: View {
                         .foregroundColor(.white))
             Text(title)
                 .font(.callout)
+            if let help {
+                HelpMark(key: title, text: help)
+            }
             Spacer()
             control()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    // 行尾的? 点击弹详细说明 HealthTick同款
+    private struct HelpMark: View {
+        let key: String
+        let text: String
+        @ObservedObject var state = PanelState.shared
+
+        var body: some View {
+            Button {
+                state.helpOpen = state.helpOpen == key ? nil : key
+            } label: {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.8))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("查看说明")
+            .popover(isPresented: Binding(
+                get: { state.helpOpen == key },
+                set: { if !$0 { state.helpOpen = nil } }
+            )) {
+                Text(text)
+                    .font(.system(size: 12))
+                    .foregroundColor(.primary)
+                    .padding(14)
+                    .frame(width: 250, alignment: .leading)
+            }
+        }
     }
 
     // 右侧弹选 popup样式
@@ -274,6 +307,45 @@ struct SettingsView: View {
                             timeField($cfg.restEnd)
                         }
                     }
+                    Divider()
+                    settingsRow("bell", .teal, "提醒方式") {
+                        popup(["浮动卡片", "全屏页面"], cfg.reminderStyle) { cfg.reminderStyle = $0 }
+                    }
+                    Divider()
+                    settingsRow("flag", .red, "催促阈值",
+                        help: "连续跳过提醒（点稍后、放超时都算跳过）达到这个次数、且期间没有新记录时，提醒文案会换成催促款；记录一次即清零。") {
+                        HStack(spacing: 6) {
+                            stepBtn("minus") { cfg.nudgeSkips = max(1, cfg.nudgeSkips - 1) }
+                            Text("连跳 \(cfg.nudgeSkips) 次后催促")
+                                .font(.system(size: 12, weight: .medium))
+                                .monospacedDigit()
+                            stepBtn("plus") { cfg.nudgeSkips = min(5, cfg.nudgeSkips + 1) }
+                        }
+                    }
+                    Divider()
+                    settingsRow("gauge", .cyan, "达标后节奏",
+                        help: "达到每日目标后，提醒间隔按倍数放缓，全屏提醒也会自动降级为小卡片，文案换成保持款。") {
+                        popup(["不变 ×1", "温和 ×2", "更缓 ×3"], cfg.goalIntervalMult - 1) { cfg.goalIntervalMult = $0 + 1 }
+                    }
+                    Divider()
+                    settingsRow("pause.circle", .brown, "超额静音",
+                        help: "今日饮水量超过目标的设定比例后，当天不再提醒（喝水过量同样无益），第二天自动恢复。") {
+                        popup(["关闭", "超额 150% 后", "超额 200% 后"], [0, 150, 200].firstIndex(of: cfg.overGoalSilence) ?? 1) {
+                            cfg.overGoalSilence = [0, 150, 200][$0]
+                        }
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 2) {
+                        settingsRow("video", .orange, "会议时自动暂停",
+                            help: "检测到 Zoom、腾讯会议、Teams、飞书、Webex、钉钉 在前台时，这轮提醒推迟2分钟再看。") {
+                            switchToggle($cfg.meetingPause)
+                        }
+                        Text("检测到 Zoom/腾讯会议/Teams/飞书 等在前台时暂停2分钟")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 48)
+                            .padding(.bottom, 6)
+                    }
                 }
                 .padding(.vertical, 4)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
@@ -321,6 +393,23 @@ struct SettingsView: View {
                         popup(all.map { $0.title }, idx) { i in
                             cfg.soundEffect = all[i].rawValue
                             SoundPlayer.shared.preview(all[i])
+                        }
+                    }
+                    Divider()
+                    settingsRow("bell", .orange, "提醒音效") {
+                        let opts: [String] = ["跟随记录音效"] + SoundPlayer.systemSoundOptions.map { $0.label }
+                        // ViewBuilder里不能放赋值型if/else 一行三元搞定
+                        let idx = cfg.remindSound.isEmpty
+                            ? 0
+                            : (SoundPlayer.systemSoundOptions.firstIndex { $0.name == cfg.remindSound } ?? -1) + 1
+                        popup(opts, max(0, idx)) { i in
+                            if i == 0 {
+                                cfg.remindSound = ""
+                            } else {
+                                let opt = SoundPlayer.systemSoundOptions[i - 1]
+                                cfg.remindSound = opt.name
+                                SoundPlayer.shared.previewSystem(opt.name)
+                            }
                         }
                     }
                 }
