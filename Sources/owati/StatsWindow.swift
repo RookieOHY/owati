@@ -152,18 +152,23 @@ struct StatsView: View {
         let _ = state.drinkPulse   // 观察驱动 记一笔/删一笔都重算
         let dates = Self.lastDates(state.statsRange == 0 ? 7 : 30)
         let stats = dayStats(dates)
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 12) {
-                CapsuleTabs(titles: ["近7天", "近30天"], index: state.statsRange) { state.statsRange = $0 }
-                    .padding(.bottom, 2)
-                sectionHeader("概览")
-                metricRows(stats)
-                barChartCard(stats)
-                sectionHeader("饮品构成")
-                typeCard(dates)
-                footerLine
+        VStack(spacing: 8) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    CapsuleTabs(titles: ["近7天", "近30天"], index: state.statsRange) { state.statsRange = $0 }
+                        .padding(.bottom, 2)
+                    sectionHeader("概览")
+                    metricRows(stats)
+                    barChartCard(stats)
+                    sectionHeader("饮品构成")
+                    typeCard(dates)
+                }
+                .padding(16)
+                .padding(.bottom, 2)
             }
-            .padding(16)
+            // 底部文案钉在窗底 不随内容滚动
+            footerLine
+                .padding(.bottom, 10)
         }
         .frame(width: 640)
     }
@@ -373,8 +378,19 @@ struct StatsView: View {
         ("chart.xyaxis.line", "折线"),
     ]
 
-    // 图区三行 值/轨/标签 柱状与折线共用 整列热区overlay
+    // 图区入口 水滴+近30天=热力网格(自带悬停 不需要列热区和值/标签行) 其余=三行常规
+    @ViewBuilder
     func chartBody(_ stats: [DayStat], top: Double) -> some View {
+        if state.statsChartKind == 0 && state.statsRange == 1 {
+            chartTrack(stats, top: Double(top))
+                .frame(height: 200)   // 方格要够大 热力区单独加高 页面可滚动
+        } else {
+            chartBodyRows(stats, top: Double(top))
+        }
+    }
+
+    // 常规三行 值/轨/标签 柱状与折线共用 整列热区overlay
+    func chartBodyRows(_ stats: [DayStat], top: Double) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ForEach(stats.indices, id: \.self) { i in
@@ -411,11 +427,15 @@ struct StatsView: View {
             })
     }
 
-    // 轨行按形态分叉
+    // 轨行按形态分叉 水滴在近30天自动换热力网格 一行小滴看不清
     @ViewBuilder
     func chartTrack(_ stats: [DayStat], top: Double) -> some View {
         if state.statsChartKind == 0 {
-            dropTrack(stats)
+            if state.statsRange == 0 {
+                dropTrack(stats)
+            } else {
+                heatTrack(stats)
+            }
         } else if state.statsChartKind == 1 {
             barTrack(stats, top: top)
         } else {
@@ -424,31 +444,36 @@ struct StatsView: View {
     }
 
     // 柱状轨 零天贴底基线小条 hover整列淡高亮
+    // 柱宽自适应: 封顶36 近30天列宽仅~19 写死36会溢出压邻列 粘连+悬停错位都源于此
     func barTrack(_ stats: [DayStat], top: Double) -> some View {
-        return HStack(spacing: 0) {
-            ForEach(stats.indices, id: \.self) { i in
-                let s = stats[i]
-                let hovered = state.statsHoverBar == i
-                ZStack {
-                    if hovered {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.primary.opacity(0.03))
-                    }
-                    VStack {
-                        Spacer(minLength: 0)
-                        if s.ml > 0 {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(s.met ? Color.owAccent : Color.owAccent.opacity(0.4))
-                                .frame(width: 36, height: max(3, 100 * Double(s.ml) / top))
-                        } else {
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(Color.primary.opacity(0.2))
-                                .frame(width: 18, height: 3)
-                                .padding(.bottom, 1)
+        return GeometryReader { g in
+            let colW = g.size.width / CGFloat(max(1, stats.count))
+            let barW = min(36, colW * 0.72)
+            HStack(spacing: 0) {
+                ForEach(stats.indices, id: \.self) { i in
+                    let s = stats[i]
+                    let hovered = state.statsHoverBar == i
+                    ZStack {
+                        if hovered {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.primary.opacity(0.03))
+                        }
+                        VStack {
+                            Spacer(minLength: 0)
+                            if s.ml > 0 {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(s.met ? Color.owAccent : Color.owAccent.opacity(0.4))
+                                    .frame(width: barW, height: max(3, 100 * Double(s.ml) / top))
+                            } else {
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(Color.primary.opacity(0.2))
+                                    .frame(width: min(18, barW), height: 3)
+                                    .padding(.bottom, 1)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -503,7 +528,7 @@ struct StatsView: View {
                     VStack {
                         Spacer(minLength: 0)
                         Image(systemName: s.ml == 0 ? "drop" : "drop.fill")
-                            .font(.system(size: stats.count <= 7 ? 38 : 18))
+                            .font(.system(size: 54))
                             .foregroundColor(s.ml == 0
                                 ? Color.secondary.opacity(0.45)
                                 : Color.owAccent.opacity(dropLevel(s)))
@@ -523,6 +548,49 @@ struct StatsView: View {
         return r >= 1 ? 1.0 : r >= 0.66 ? 0.75 : r >= 0.33 ? 0.5 : 0.28
     }
 
+    // 近30天热力网格 5行×6列顺排 30格不多不少 无周对齐空占位 行首=该行首日
+    func heatTrack(_ stats: [DayStat]) -> some View {
+        return GeometryReader { g in
+            let side = min(38, (g.size.height - 4 * 2) / 5)
+            HStack(alignment: .center, spacing: 8) {
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    ForEach(0..<5, id: \.self) { r in
+                        HStack(spacing: 2) {
+                            Text(Self.mdShortFormat.string(from: Self.date(stats[r * 6].date)))
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .frame(width: 30, height: side, alignment: .trailing)
+                            ForEach(0..<6, id: \.self) { c in
+                                let i = r * 6 + c
+                                heatCell(stats[i], idx: i, side: side)
+                            }
+                        }
+                    }
+                }
+                Spacer()
+            }
+        }
+    }
+
+    // 格子 深=越接近/超过当天目标 0记录浅灰 今天描边 悬停出明细
+    func heatCell(_ s: DayStat, idx: Int, side: CGFloat) -> some View {
+        let todayStr = Database.dayFormat.string(from: Date())
+        return RoundedRectangle(cornerRadius: 5)
+            .fill(s.ml == 0
+                  ? Color.primary.opacity(0.06)
+                  : Color.owAccent.opacity(dropLevel(s)))
+            .frame(width: side, height: side)
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(s.date == todayStr ? Color.owAccent : .clear, lineWidth: 1.5))
+            .contentShape(Rectangle())
+            .onHover { on in
+                state.statsHoverBar = on ? idx : (state.statsHoverBar == idx ? nil : state.statsHoverBar)
+            }
+    }
+
     // 底部标签 近7天=日期(M/d) 30天每5天标日期号 末位必标
     func barLabel(_ idx: Int, _ s: DayStat) -> String {
         if state.statsRange == 0 {
@@ -534,16 +602,19 @@ struct StatsView: View {
 
     @ViewBuilder
     func barTip(_ stats: [DayStat]) -> some View {
-        let tip: String
+        let base = Text("")
+        var tip = base
         if let h = state.statsHoverBar, stats.indices.contains(h) {
             let s = stats[h]
-            tip = "\(Self.mdFormat.string(from: Self.date(s.date))) · \(s.ml.formatted()) ml · \(s.cups) 杯 · 目标 \(s.goal.formatted())\(s.met ? " · 已达标" : "")"
-        } else {
-            tip = ""   // 未悬停留空占位 防悬停时布局跳动
+            let head = Text("\(Self.mdFormat.string(from: Self.date(s.date))) · \(s.ml.formatted()) ml · \(s.cups) 杯 · ")
+                .foregroundColor(.secondary)
+            let tail = s.met
+                ? Text("已达标 ✓").foregroundColor(.owAccent)
+                : Text("还差 \((s.goal - s.ml).formatted()) ml").foregroundColor(.orange)
+            tip = head + tail
         }
-        return Text(tip)
+        return tip
             .font(.system(size: 10))
-            .foregroundColor(.secondary)
     }
 
     // MARK: 饮品构成 WaterMinder式 横条+emoji+占比
