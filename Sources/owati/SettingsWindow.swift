@@ -1,7 +1,7 @@
 import SwiftUI
 
-// 设置窗 转正期间Dock会亮图标 关窗切回accessory
-final class SettingsPanelWindow: NSWindow, NSWindowDelegate {
+// 浮动独立窗基类 设置窗/统计窗共用 转正期间Dock会亮图标 关窗切回accessory
+final class FloatingPanelWindow: NSWindow, NSWindowDelegate {
     override var canBecomeKey: Bool { true }
 
     func windowWillClose(_ notification: Notification) {
@@ -15,7 +15,7 @@ enum SettingsWindow {
 
     static func show() {
         if window == nil {
-            let w = SettingsPanelWindow(
+            let w = FloatingPanelWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 640, height: 640),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered, defer: false)
@@ -53,19 +53,10 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 顶部居中胶囊Tab容器 纯文本选中灰胶囊 HealthTick同款
-            HStack {
-                Spacer()
-                HStack(spacing: 2) {
-                    tabBtn("通用", 0)
-                    tabBtn("关于", 1)
-                }
-                .padding(3)
-                .background(Color.primary.opacity(0.18), in: RoundedRectangle(cornerRadius: 9))
-                Spacer()
-            }
-            .padding(.top, 10)
-            .padding(.bottom, 12)
+            // 顶部居中胶囊Tab 纯文本选中灰胶囊 HealthTick同款 与统计窗共用组件
+            CapsuleTabs(titles: ["通用", "关于"], index: state.settingsTab) { state.settingsTab = $0 }
+                .padding(.top, 10)
+                .padding(.bottom, 12)
             // 内容 懒加载 只构建当前tab
             Group {
                 if state.settingsTab == 0 {
@@ -77,26 +68,6 @@ struct SettingsView: View {
         }
         .frame(width: 640)
         .padding(.bottom, 12)
-    }
-
-    // 顶部Tab按钮 纯文本 选中灰胶囊 居中容器
-    private func tabBtn(_ title: String, _ idx: Int) -> some View {
-        Button {
-            state.settingsTab = idx
-        } label: {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 5)
-                .background(
-                    state.settingsTab == idx
-                        ? AnyShapeStyle(Color.primary.opacity(0.14))
-                        : AnyShapeStyle(Color.clear),
-                    in: RoundedRectangle(cornerRadius: 6))
-                .foregroundColor(state.settingsTab == idx ? .primary : Color.primary.opacity(0.65))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     // 卡片小灰标题 HealthTick: 11pt secondary 缩进10
@@ -129,36 +100,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-    }
-
-    // 行尾的? 点击弹详细说明 HealthTick同款
-    private struct HelpMark: View {
-        let key: String
-        let text: String
-        @ObservedObject var state = PanelState.shared
-
-        var body: some View {
-            Button {
-                state.helpOpen = state.helpOpen == key ? nil : key
-            } label: {
-                Image(systemName: "questionmark.circle")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary.opacity(0.8))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("查看说明")
-            .popover(isPresented: Binding(
-                get: { state.helpOpen == key },
-                set: { if !$0 { state.helpOpen = nil } }
-            )) {
-                Text(text)
-                    .font(.system(size: 12))
-                    .foregroundColor(.primary)
-                    .padding(14)
-                    .frame(width: 250, alignment: .leading)
-            }
-        }
     }
 
     // 右侧弹选 popup样式

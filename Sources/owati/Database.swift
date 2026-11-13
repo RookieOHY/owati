@@ -301,6 +301,110 @@ final class Database {
         return sqlite3_last_insert_rowid(db)
     }
 
+    // MARK: 统计页
+
+    // 全历史每天水合总量 升序 最佳连续/最佳日用
+    func dayTotals() -> [(date: String, ml: Int)] {
+        var stmt: OpaquePointer?
+        let sql = """
+            SELECT date, CAST(ROUND(COALESCE(SUM(amount_ml * \(Self.ratioCase)), 0)) AS INTEGER)
+            FROM drink_records GROUP BY date ORDER BY date ASC
+        """
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        var out: [(date: String, ml: Int)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out.append((String(cString: sqlite3_column_text(stmt, 0)), Int(sqlite3_column_int64(stmt, 1))))
+        }
+        return out
+    }
+
+    // 批量取目标覆盖 key=date SQLite变量上限999 分片500稳妥
+    func goalOverrides(dates: [String]) -> [String: Int] {
+        var out: [String: Int] = [:]
+        for start in stride(from: 0, to: dates.count, by: 500) {
+            let chunk = Array(dates[start..<min(start + 500, dates.count)])
+            guard !chunk.isEmpty else { continue }
+            let qs = chunk.map { _ in "?" }.joined(separator: ",")
+            let sql = "SELECT date, goal_ml FROM goal_overrides WHERE date IN (\(qs))"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { continue }
+            defer { sqlite3_finalize(stmt) }
+            for (i, d) in chunk.enumerated() {
+                sqlite3_bind_text(stmt, Int32(i + 1), d, -1, transient)
+            }
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                out[String(cString: sqlite3_column_text(stmt, 0))] = Int(sqlite3_column_int64(stmt, 1))
+            }
+        }
+        return out
+    }
+
+    // 区间内各类型 原始ml与杯数 量降序
+    func typeTotals(dates: [String]) -> [(type: DrinkType, ml: Int, cups: Int)] {
+        guard !dates.isEmpty else { return [] }
+        let qs = dates.map { _ in "?" }.joined(separator: ",")
+        let sql = "SELECT drink_type, SUM(amount_ml), COUNT(*) FROM drink_records WHERE date IN (\(qs)) GROUP BY drink_type ORDER BY 2 DESC"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        for (i, d) in dates.enumerated() {
+            sqlite3_bind_text(stmt, Int32(i + 1), d, -1, transient)
+        }
+        var out: [(type: DrinkType, ml: Int, cups: Int)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let t = String(cString: sqlite3_column_text(stmt, 0))
+            out.append((DrinkType(rawValue: t) ?? .water,
+                        Int(sqlite3_column_int64(stmt, 1)),
+                        Int(sqlite3_column_int64(stmt, 2))))
+        }
+        return out
+    }
+
+    // 区间内每小时加权水合量 key=hour(0-23)
+    func mlByHour(dates: [String]) -> [Int: Int] {
+        guard !dates.isEmpty else { return [:] }
+        let qs = dates.map { _ in "?" }.joined(separator: ",")
+        let sql = """
+            SELECT CAST(strftime('%H', ts) AS INTEGER) AS h,
+                   CAST(ROUND(COALESCE(SUM(amount_ml * \(Self.ratioCase)), 0)) AS INTEGER)
+            FROM drink_records WHERE date IN (\(qs)) GROUP BY h
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [:] }
+        defer { sqlite3_finalize(stmt) }
+        for (i, d) in dates.enumerated() {
+            sqlite3_bind_text(stmt, Int32(i + 1), d, -1, transient)
+        }
+        var out: [Int: Int] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out[Int(sqlite3_column_int64(stmt, 0))] = Int(sqlite3_column_int64(stmt, 1))
+        }
+        return out
+    }
+
+    // 区间内全部记录 时间正序 方格卡用
+    func recordsIn(dates: [String]) -> [(id: Int64, ts: Date, ml: Int, type: DrinkType)] {
+        guard !dates.isEmpty else { return [] }
+        let qs = dates.map { _ in "?" }.joined(separator: ",")
+        let sql = "SELECT id, ts, amount_ml, drink_type FROM drink_records WHERE date IN (\(qs)) ORDER BY ts ASC"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        for (i, d) in dates.enumerated() {
+            sqlite3_bind_text(stmt, Int32(i + 1), d, -1, transient)
+        }
+        var out: [(id: Int64, ts: Date, ml: Int, type: DrinkType)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let c = sqlite3_column_text(stmt, 1),
+                  let t = Self.tsFormat.date(from: String(cString: c)) else { continue }
+            out.append((sqlite3_column_int64(stmt, 0), t,
+                        Int(sqlite3_column_int64(stmt, 2)),
+                        DrinkType(rawValue: String(cString: sqlite3_column_text(stmt, 3))) ?? .water))
+        }
+        return out
+    }
+
     // 取单个整数 带参数绑定
     private func queryInt(_ sql: String, _ params: [String]) -> Int {
         var stmt: OpaquePointer?

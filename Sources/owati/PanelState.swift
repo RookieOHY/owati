@@ -38,6 +38,10 @@ final class PanelState: ObservableObject {
     @Published var layoutJumping = false      // 窗口跳变中 装饰层暂停绘制防错位闪现
     @Published var settingsTab = 0        // 设置窗口侧栏 0通用 1关于
     @Published var helpOpen: String? = nil // 设置页问号帮助当前打开的行
+    @Published var statsHoverBar: Int? = nil   // 统计柱状图悬停列
+    @Published var statsRange = 0         // 统计窗 0近7天 1近30天 卡片跟着切
+    @Published var statsHoverCard: Int? = nil  // 统计指标卡悬停序号 驱动浮起动效
+    @Published var statsChartKind = 0     // 统计每日水合图形态 0水滴 1柱状 2折线 默认水滴
     var pageHeight: CGFloat = 0               // 主页滑动区高度 实验室页钉这个高度 滑动期间窗口不变
     var wasGoalReached = false            // 上次是否已达标 算跨越用
     // 下次提醒时间 引擎驱动 面板右卡显示/倒计时共用
