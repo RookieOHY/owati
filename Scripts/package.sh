@@ -41,4 +41,13 @@ EOF
 # 4. ad-hoc签名 本地双击可跑
 codesign --force --sign - "$APP" 2>/dev/null || true
 
+# 5. DMG分发镜像 拖拽安装形态
+rm -rf build/dmg-staging
+mkdir -p build/dmg-staging
+cp -R "$APP" build/dmg-staging/
+ln -s /Applications build/dmg-staging/Applications
+rm -f "build/owati-$VERSION.dmg"
+hdiutil create -volname owati -srcfolder build/dmg-staging -ov -format UDZO "build/owati-$VERSION.dmg" -quiet
+
 echo "✅ 打包完成: $APP (版本 $VERSION)"
+echo "   分发包: build/owati-$VERSION.dmg"
