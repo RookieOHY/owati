@@ -111,6 +111,14 @@ struct FullScreenReminderView: View {
             card
         }
         .ignoresSafeArea()
+        // 双击背景空白 = 稍后 比找按钮快(卡片区内点击不触发)
+        .onTapGesture(count: 2) {
+            if !state.previewing {
+                PanelState.shared.snoozeCard()
+            } else {
+                FullScreenReminder.shared.hide()
+            }
+        }
     }
 
     // 真原生玻璃 NSVisualEffectView behindWindow磨砂掉背后的真实屏幕

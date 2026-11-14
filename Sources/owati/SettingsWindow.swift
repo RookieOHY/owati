@@ -67,6 +67,17 @@ struct SettingsView: View {
                     aboutPane
                 }
             }
+            // tab高度自适应 关于页内容矮 窗口收矮 立即到位不带动画(动画显拖沓)
+            .onChange(of: state.settingsTab) { t in
+                if let w = NSApp.windows.first(where: { $0.title == "设置" }) {
+                    let h: CGFloat = t == 1 ? 480 : 640
+                    var f = w.frame
+                    let top = f.origin.y + f.height
+                    f.size.height = h
+                    f.origin.y = top - h
+                    w.setFrame(f, display: true)
+                }
+            }
         }
         .frame(width: 640)
         .padding(.bottom, 12)
@@ -393,17 +404,17 @@ struct SettingsView: View {
                     }
                     Divider()
                     dataRow(icon: "square.and.arrow.down", color: .teal, label: "导入数据",
-                        hint: "从导出的文件恢复记录和设置", btn: "导入", doneKey: "import") {
+                        hint: nil, btn: "导入", doneKey: "import") {
                         importData()
                     }
                     Divider()
                     dataRow(icon: "square.and.arrow.up", color: .blue, label: "导出数据",
-                        hint: "导出所有打卡记录和设置", btn: "导出", doneKey: "export") {
+                        hint: nil, btn: "导出", doneKey: "export") {
                         exportData()
                     }
                     Divider()
                     dataRow(icon: "trash", color: .red, label: "重置数据",
-                        hint: "清除所有打卡记录与目标覆盖 需三次确认", btn: "重置", doneKey: "resetData") {
+                        hint: nil, btn: "重置", doneKey: "resetData") {
                         resetData()
                     }
                 }
@@ -597,16 +608,16 @@ struct SettingsView: View {
     private var aboutPane: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
-                // 应用徽标 品牌水滴实底 无多余环
-                ZStack {
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(LinearGradient(colors: [Color.owAccent, Color(red: 0.04, green: 0.42, blue: 0.92)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 96, height: 96)
-                        .shadow(color: Color.owAccent.opacity(0.3), radius: 10, y: 5)
-                    if let glyph = Self.brandGlyph {
-                        Image(nsImage: glyph)
-                            .resizable()
-                            .frame(width: 54, height: 54)
+                    // 应用徽标 品牌水滴实底 无多余环
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 26, style: .continuous)
+                            .fill(LinearGradient(colors: [Color.owAccent, Color(red: 0.04, green: 0.42, blue: 0.92)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 96, height: 96)
+                            .shadow(color: Color.owAccent.opacity(0.3), radius: 10, y: 5)
+                        if let glyph = Self.brandGlyph {
+                            Image(nsImage: glyph)
+                                .resizable()
+                                .frame(width: 54, height: 54)
                     }
                 }
                 .padding(.top, 24)
@@ -632,20 +643,22 @@ struct SettingsView: View {
                     featureChip("target", "目标追踪")
                     featureChip("chart.bar", "数据统计")
                 }
-                // 检查更新
+                // 检查更新 主蓝胶囊强化CTA
                 VStack(spacing: 6) {
                     Button {
                         runUpdateCheck()
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 12))
+                                .font(.system(size: 12, weight: .semibold))
                             Text("检查更新")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.system(size: 13, weight: .semibold))
                         }
-                        .padding(.horizontal, 16)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 18)
                         .padding(.vertical, 8)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        .background(Color.owAccent, in: Capsule())
+                        .shadow(color: Color.owAccent.opacity(0.3), radius: 5, y: 2)
                     }
                     .buttonStyle(.plain)
                     if !state.updateStatus.isEmpty {
@@ -666,6 +679,19 @@ struct SettingsView: View {
                     .padding(.bottom, 12)
             }
             .frame(maxWidth: .infinity)
+            // 极淡的水色blob点缀 呼应全屏页 纯装饰 background不参与布局
+            .background(
+                ZStack(alignment: .top) {
+                    Circle()
+                        .fill(Color.owAccent.opacity(0.06))
+                        .frame(width: 560, height: 560)
+                        .offset(x: -210, y: -180)
+                    Circle()
+                        .fill(Color.teal.opacity(0.06))
+                        .frame(width: 430, height: 430)
+                        .offset(x: 250, y: 190)
+                }
+            )
         }
     }
 
