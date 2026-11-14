@@ -24,7 +24,6 @@ final class PanelState: ObservableObject {
     @Published var undo: UndoAction? = nil    // 最近一次可撤销操作
     @Published var undoText = ""
     @Published var dateMode = 0          // 右上角 0公历 1农历 2周五判断 点击循环
-    @Published var showLab = false       // 实验室页 面板左滑进入
     @Published var hoverGoal = false     // 悬停"今日目标" 显示数值提示
     @Published var hoverBtn: String? = nil   // 底栏悬停的按钮名 悬停亮蓝
     @Published var editingGoal = false       // 正在改今日目标
@@ -47,7 +46,6 @@ final class PanelState: ObservableObject {
     @Published var badgeToastName = ""         // toast里的徽章名
     @Published var badgeToastIcon = "trophy.fill"
     @Published var statsChartKind = 0     // 统计每日水合图形态 0水滴 1柱状 2折线 默认水滴
-    var pageHeight: CGFloat = 0               // 主页滑动区高度 实验室页钉这个高度 滑动期间窗口不变
     var wasGoalReached = false            // 上次是否已达标 算跨越用
     // 下次提醒时间 引擎驱动 面板右卡显示/倒计时共用
     @Published var nextRemind = Date().addingTimeInterval(45 * 60)

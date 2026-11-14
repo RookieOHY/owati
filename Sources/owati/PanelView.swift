@@ -51,9 +51,8 @@ struct PanelView: View {
         TimelineView(.periodic(from: .now, by: 1)) { ctx in // 秒级时钟 驱动日期和倒计时
             let _ = state.checkGoal(consumedML: consumedML, goal: todayGoal)
             VStack(spacing: 0) {
-                // 滑动区 主页 <-> 实验室页
+                // 主页
                 ZStack {
-                    // 主页
                     VStack(spacing: 16) {
                         // 左上角 logo呼吸灯 + 日期注脚
                         HStack(alignment: .center, spacing: 8) {
@@ -99,24 +98,8 @@ struct PanelView: View {
                                 .transition(.opacity)
                         }
                     }
-                    // 进实验室时主页淡出并禁点 空白页才有"翻页"感
-                    .opacity(state.showLab ? 0 : 1)
-                    .allowsHitTesting(!state.showLab)
-                    // 实验室页 从右滑入(内容向左) 高度钉在主页高度 滑动期间窗口不变
-                    if state.showLab {
-                        labPage
-                            .frame(height: state.pageHeight > 0 ? state.pageHeight : nil, alignment: .top)
-                            .transition(.move(edge: .trailing))
-                    }
                 }
-                .background(
-                    GeometryReader { g in
-                        Color.clear
-                            .onAppear { if !state.showLab { state.pageHeight = g.size.height } }
-                            .onChange(of: g.size.height) { if !state.showLab { state.pageHeight = $0 } }
-                    }
-                )
-                // 底部 分隔线 + 按钮排 常驻不参与滑动
+                // 底部 分隔线 + 按钮排 常驻
                 VStack(spacing: 14) {
                     Divider().padding(.horizontal, 4)
                     HStack(spacing: 0) {
@@ -150,12 +133,7 @@ struct PanelView: View {
                             }
                             HelpWindow.show()
                         }
-                        controlButton("实验室", "wand.and.stars", "4", active: state.showLab) {
-                            state.setHover(nil)
-                            state.hoverRow = nil
-                            withAnimation(.easeOut(duration: 0.25)) { state.showLab.toggle() }
-                        }
-                        controlButton("设置", "gear", "5") {
+                        controlButton("设置", "gear", "4") {
                             state.setHover(nil)
                             state.hoverRow = nil
                             // HealthTick式 先收面板再弹设置窗 面板挡不住视线

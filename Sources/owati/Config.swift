@@ -46,7 +46,7 @@ final class AppConfig: ObservableObject {
     @Published var didOnboarding: Bool {
         didSet { ud.set(didOnboarding, forKey: "didOnboarding") }
     }
-    // 快捷杯量 一杯/一瓶 实验室可改
+    // 快捷杯量 一杯/一瓶
     @Published var cupML: Int {
         didSet { ud.set(cupML, forKey: "cupML") }
     }
