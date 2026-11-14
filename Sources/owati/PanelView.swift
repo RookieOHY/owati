@@ -130,7 +130,7 @@ struct PanelView: View {
                             }
                             StatsWindow.show()
                         }
-                        controlButton("成就", "trophy", "2") {
+                        controlButton("成就", "trophy", "2", dot: state.hasNewBadges) {
                             state.setHover(nil)
                             state.hoverRow = nil
                             // 与设置同款 先收面板再弹窗 面板挡不住视线
@@ -524,8 +524,8 @@ struct PanelView: View {
         }
     }
 
-    // 底栏按钮 图标+小字 active/悬停时点亮主题色
-    func controlButton(_ title: String, _ icon: String, _ key: String, active: Bool = false, action: @escaping () -> Void) -> some View {
+    // 底栏按钮 图标+小字 active/悬停时点亮主题色 dot=右上角新货蓝点
+    func controlButton(_ title: String, _ icon: String, _ key: String, active: Bool = false, dot: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 2) {
                 Image(systemName: icon)
@@ -535,6 +535,15 @@ struct PanelView: View {
             }
             .frame(width: 36, height: 32)
             .foregroundColor((active || state.hoverBtn == title) ? Color.accentColor : Color.primary.opacity(0.5))
+            .overlay(alignment: .topTrailing) {
+                if dot {
+                    Circle()
+                        .fill(Color.owAccent)
+                        .frame(width: 6, height: 6)
+                        .overlay(Circle().strokeBorder(.white.opacity(0.7)))
+                        .offset(x: 4, y: 0)
+                }
+            }
         }
         .buttonStyle(.plain)
         .keyboardShortcut(KeyEquivalent(key.first!), modifiers: .command)

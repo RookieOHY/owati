@@ -11,7 +11,11 @@ final class AppConfig: ObservableObject {
 
     // 每日喝水目标 ml
     @Published var dailyGoalML: Int {
-        didSet { ud.set(dailyGoalML, forKey: "dailyGoalML") }
+        didSet {
+            ud.set(dailyGoalML, forKey: "dailyGoalML")
+            // 目标变了 streak/单日达标率/满勤周口径全跟着变 徽章重评
+            PanelState.shared.evaluateBadges()
+        }
     }
     // 提醒间隔 分钟
     @Published var remindIntervalMin: Int {
@@ -103,6 +107,10 @@ final class AppConfig: ObservableObject {
     @Published var meetingPause: Bool {
         didSet { ud.set(meetingPause, forKey: "meetingPause") }
     }
+    // 已查看过的徽章id 陈列室NEW角标用
+    @Published var achvSeen: Set<String> {
+        didSet { ud.set(Array(achvSeen), forKey: "achvSeen") }
+    }
     // 开机自启动 SMAppService 真实状态为准
     @Published var launchAtLogin: Bool {
         didSet {
@@ -138,6 +146,7 @@ final class AppConfig: ObservableObject {
         menuRing = d.object(forKey: "menuRing") as? Bool ?? true
         menuCountdown = d.object(forKey: "menuCountdown") as? Bool ?? true
         meetingPause = d.object(forKey: "meetingPause") as? Bool ?? true
+        achvSeen = Set(d.stringArray(forKey: "achvSeen") ?? [])
         launchAtLogin = d.object(forKey: "launchAtLogin") as? Bool ?? false
         // 兜底 空的提醒日回落到工作日
         if remindDays.isEmpty { remindDays = [2, 3, 4, 5, 6] }

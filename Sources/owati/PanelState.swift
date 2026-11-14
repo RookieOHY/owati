@@ -186,19 +186,45 @@ final class PanelState: ObservableObject {
     private var toastToken = 0
     private var toastWork: DispatchWorkItem?
 
+    // 新货机制 开窗时快照当次的新徽章 展位挂NEW角标 底栏挂蓝点
+    @Published var newBadgeIds: Set<String> = []   // 本次开窗时未看过的已解锁徽章
+    @Published var hasNewBadges = false            // 底栏成就按钮的蓝点
+
+    // 打开陈列室 快照新徽章后全部标记已看 蓝点即消
+    func openAchievementRoom() {
+        let earned = Achievements.earnedIDs(db: Database.shared)
+        newBadgeIds = earned.subtracting(AppConfig.shared.achvSeen)
+        AppConfig.shared.achvSeen.formUnion(earned)
+        hasNewBadges = false
+    }
+
+    // 点开某徽章详情 单独消它的NEW
+    func markAchvSeen(_ id: String) {
+        newBadgeIds.remove(id)
+        AppConfig.shared.achvSeen.insert(id)
+        let earned = Achievements.earnedIDs(db: Database.shared)
+        hasNewBadges = !earned.isSubset(of: AppConfig.shared.achvSeen)
+    }
+
     func evaluateBadges() {
         let earned = Achievements.earnedIDs(db: Database.shared)
         guard let known = knownBadges else {
             knownBadges = earned
+            syncNewBadges(earned)
             return
         }
         guard !earned.isSubset(of: known) else { return }
         let fresh = earned.subtracting(known)
         knownBadges = earned
+        syncNewBadges(earned)
         for b in Achievements.all where fresh.contains(b.id) {
             pendingToasts.append((b.name, b.icon))
         }
         if !badgeToastVisible { popToast() }
+    }
+
+    private func syncNewBadges(_ earned: Set<String>) {
+        hasNewBadges = !earned.isSubset(of: AppConfig.shared.achvSeen)
     }
 
     // 弹一条3.5秒 多枚排队 上一条收起后接下一条

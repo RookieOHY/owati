@@ -25,6 +25,7 @@ enum AchievementWindow {
             // 临时转正 accessory的键盘焦点被系统吞 关窗切回accessory
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
+            PanelState.shared.openAchievementRoom()   // 快照新货 消底栏蓝点
             w.orderFrontRegardless()
             w.makeKeyAndOrderFront(nil)
         }
@@ -99,16 +100,16 @@ struct AchievementView: View {
         return Group {
             if let b = hovered {
                 let cur = b.currentValue(db: db)
-                let got = cur >= b.target
+                let got = cur >= b.goal
                 HStack(spacing: 6) {
-                    Image(systemName: b.icon)
+                    Image(systemName: b.displayIcon(got: got))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.owAccent)
                         // 定框 防sailboat/fish这类高个子符号把讲解屏撑高
                         .frame(width: 16, height: 16)
-                    Text(b.name)
+                    Text(b.displayName(got: got))
                         .fontWeight(.semibold)
-                    Text(b.condition)
+                    Text(b.displayCondition(got: got))
                         .foregroundColor(.secondary)
                     Spacer()
                     Text(got ? "已收藏 ✓" : b.progressText(cur))
@@ -134,15 +135,15 @@ struct AchievementView: View {
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
     }
 
-    // 最接近解锁的徽章 华为式进度外露 在头部勾一下
+    // 最接近解锁的徽章 华为式进度外露 在头部勾一下 秘藏跳过不剧透
     var nextHint: String? {
         var bestBadge: Badge?
         var bestRatio = 0.0
         var bestCur = 0
         for b in Achievements.all {
             let cur = b.currentValue(db: db)
-            guard cur < b.target else { continue }
-            let r = Double(cur) / Double(b.target)
+            guard cur < b.goal, !b.hidden else { continue }
+            let r = Double(cur) / Double(b.goal)
             if r > bestRatio { bestRatio = r; bestBadge = b; bestCur = cur }
         }
         guard let b = bestBadge, let h = b.hint(bestCur) else { return nil }
@@ -191,7 +192,7 @@ struct AchievementView: View {
 
     func showcaseCell(_ b: Badge, idx: Int) -> some View {
         let cur = b.currentValue(db: db)
-        let got = cur >= b.target
+        let got = cur >= b.goal
         let hovered = state.achvHoverId == b.id
         return VStack(spacing: 6) {
             // 射灯区 只有解锁的有光束
@@ -210,9 +211,22 @@ struct AchievementView: View {
             ZStack {
                 if got {
                     floatingMedal(b, size: 46, phase: Double(idx) * 0.9)
+                        .overlay(alignment: .topTrailing) {
+                            // NEW角标 本次进馆还没看过的
+                            if state.newBadgeIds.contains(b.id) {
+                                Text("NEW")
+                                    .font(.system(size: 7, weight: .heavy))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1.5)
+                                    .background(Color.owAccent, in: Capsule())
+                                    .overlay(Capsule().strokeBorder(.white.opacity(0.6)))
+                                    .offset(x: 8, y: -4)
+                            }
+                        }
                 } else {
                     medallion(b, got: false, size: 44,
-                              progress: Double(cur) / Double(max(1, b.target)))
+                              progress: Double(cur) / Double(max(1, b.goal)))
                         .overlay {
                             ZStack {
                                 curtain(false)
@@ -243,7 +257,7 @@ struct AchievementView: View {
                     .fill(Color.primary.opacity(got ? 0.09 : 0.06))
                     .frame(width: 54, height: 5)
             }
-            Text(b.name)
+            Text(b.displayName(got: got))
                 .font(.system(size: 10))
                 .foregroundColor(got ? .primary : .secondary)
                 .lineLimit(1)
@@ -256,7 +270,10 @@ struct AchievementView: View {
             state.achvHoverId = h ? b.id : (state.achvHoverId == b.id ? nil : state.achvHoverId)
         }
         .onTapGesture {
-            withAnimation(.easeOut(duration: 0.2)) { state.achvDetailId = b.id }
+            withAnimation(.easeOut(duration: 0.2)) {
+                state.achvDetailId = b.id
+                state.markAchvSeen(b.id)   // 看过详情 NEW即消
+            }
         }
         .zIndex(hovered ? 3 : 1)
     }
@@ -304,7 +321,7 @@ struct AchievementView: View {
                 .strokeBorder(got ? Color.white.opacity(0.35) : Color.primary.opacity(0.10),
                               lineWidth: 1)
                 .frame(width: size - 6, height: size - 6)
-            Image(systemName: b.icon)
+            Image(systemName: b.displayIcon(got: got))
                 .font(.system(size: size * 0.4, weight: .medium))
                 .foregroundColor(got ? .white : .primary.opacity(0.35))
         }
@@ -335,7 +352,7 @@ struct AchievementView: View {
 
     func detailCard(_ b: Badge) -> some View {
         let cur = b.currentValue(db: db)
-        let got = cur >= b.target
+        let got = cur >= b.goal
         return ZStack {
             Color.primary.opacity(0.25)
                 .ignoresSafeArea()
@@ -345,11 +362,11 @@ struct AchievementView: View {
                 }
             VStack(spacing: 12) {
                 medallion(b, got: got, size: 68,
-                          progress: got ? 1 : Double(cur) / Double(max(1, b.target)))
+                          progress: got ? 1 : Double(cur) / Double(max(1, b.goal)))
                 VStack(spacing: 4) {
-                    Text(b.name)
+                    Text(b.displayName(got: got))
                         .font(.system(size: 15, weight: .bold))
-                    Text(b.condition)
+                    Text(b.displayCondition(got: got))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }

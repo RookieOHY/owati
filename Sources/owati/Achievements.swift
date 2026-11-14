@@ -12,6 +12,7 @@ enum BadgeSeries: CaseIterable {
     case cups      // 累计杯数
     case rhythm    // 生活节奏 作息与口味
     case special   // 高光时刻 单日单次与彩蛋
+    case mystery   // 秘藏 隐藏条件 达成后揭晓
 
     var title: String {
         switch self {
@@ -20,6 +21,7 @@ enum BadgeSeries: CaseIterable {
         case .cups: return "累计杯数"
         case .rhythm: return "生活节奏"
         case .special: return "高光时刻"
+        case .mystery: return "秘藏"
         }
     }
 
@@ -30,6 +32,7 @@ enum BadgeSeries: CaseIterable {
         case .cups: return "number"
         case .rhythm: return "clock"
         case .special: return "sparkles"
+        case .mystery: return "questionmark.square.dashed"
         }
     }
 }
@@ -40,7 +43,7 @@ enum BadgeKind {
     case volume       // 全库累计水合ml
     case cups         // 全库累计杯数
     case firstLog     // 记过第一笔 0/1
-    case overGoalDay  // 历史单日最高达标率% 150解锁
+    case overGoalDay  // 历史单日最高达标率% 150/200两档
     case friday       // 达标过的周五次数
     case bigSip       // 单笔最大原始ml 500解锁
     case earlyBird    // 7点前记过一笔 0/1
@@ -50,6 +53,9 @@ enum BadgeKind {
     case perfectWeek  // 存在一个自然周七天全达标 0/1
     case daysCount    // 有记录的天数(不要求连续)
     case cupDay       // 历史单日最高杯数
+    case monthChallenge // 本自然月达标天数 每月刷新
+    case midnight     // 0点档(00:00-00:59)记过一笔 0/1
+    case collector    // 其余全部徽章已收藏 动态目标
 }
 
 struct Badge: Identifiable {
@@ -60,6 +66,19 @@ struct Badge: Identifiable {
     let icon: String      // 奖牌内SF图标
     let condition: String // 获取条件文案
     let target: Int       // volume单位ml 其余为天/杯/次/%
+    var hidden: Bool = false // 秘藏 未解锁一律马赛克
+
+    // 目标值 收藏家动态=除自己外的总数 其余用静态target
+    var goal: Int {
+        kind == .collector
+            ? max(1, Achievements.all.filter { $0.kind != .collector }.count)
+            : target
+    }
+
+    // 对外展示口径 未解锁的秘藏一律马赛克
+    func displayIcon(got: Bool) -> String { hidden && !got ? "questionmark" : icon }
+    func displayName(got: Bool) -> String { hidden && !got ? "？？？" : name }
+    func displayCondition(got: Bool) -> String { hidden && !got ? "达成后揭晓" : condition }
 
     // 当前值 与target同口径 volume=ml overGoalDay=%
     func currentValue(db: Database) -> Int {
@@ -118,49 +137,71 @@ struct Badge: Identifiable {
             return db.recordedDays()
         case .cupDay:
             return db.bestDayCups()
+        case .monthChallenge:
+            // 本自然月达标天数 月切自动归零 只数当月
+            let def = AppConfig.shared.dailyGoalML
+            let days = db.dayTotals()
+            let ov = db.goalOverrides(dates: days.map { $0.date })
+            let monthPrefix = Database.dayFormat.string(from: Date()).prefix(7)
+            var met = 0
+            for d in days where d.date.hasPrefix(monthPrefix) {
+                let goal = ov[d.date] ?? def
+                if goal > 0, d.ml >= goal { met += 1 }
+            }
+            return met
+        case .midnight:
+            return min(db.midnightRecords(), 1)
+        case .collector:
+            return Achievements.all.filter { $0.kind != .collector && $0.earned(db: db) }.count
         }
     }
 
-    func earned(db: Database) -> Bool { currentValue(db: db) >= target }
+    func earned(db: Database) -> Bool { currentValue(db: db) >= goal }
 
     // 数字进度 current / target
     func progressText(_ cur: Int) -> String {
-        let c = min(cur, target)
+        if hidden && cur < goal { return "？" }
+        let c = min(cur, goal)
         switch kind {
-        case .streak: return "\(c) / \(target) 天"
-        case .cups: return "\(c.formatted()) / \(target.formatted()) 杯"
-        case .volume: return "\(Self.lit(c)) / \(Self.lit(target)) L"
-        case .firstLog: return c >= 1 ? "1 / 1" : "0 / 1"
-        case .overGoalDay: return "单日最高 \(c)% · 目标 \(target)%"
-        case .friday: return "\(min(cur, target)) / \(target) 次"
-        case .bigSip: return "\(c.formatted()) / \(target.formatted()) ml"
-        case .earlyBird, .nightOwl: return c >= 1 ? "1 / 1" : "0 / 1"
-        case .taster: return "\(c) / \(target) 种"
-        case .coffee: return "\(c.formatted()) / \(target.formatted()) 杯"
+        case .streak: return "\(c) / \(goal) 天"
+        case .cups: return "\(c.formatted()) / \(goal.formatted()) 杯"
+        case .volume: return "\(Self.lit(c)) / \(Self.lit(goal)) L"
+        case .firstLog, .earlyBird, .nightOwl, .midnight: return c >= 1 ? "1 / 1" : "0 / 1"
+        case .overGoalDay: return "单日最高 \(c)% · 目标 \(goal)%"
+        case .friday: return "\(min(cur, goal)) / \(goal) 次"
+        case .bigSip: return "\(c.formatted()) / \(goal.formatted()) ml"
+        case .taster: return "\(c) / \(goal) 种"
+        case .coffee: return "\(c.formatted()) / \(goal.formatted()) 杯"
         case .perfectWeek: return c >= 1 ? "1 / 1 周" : "0 / 1 周"
-        case .daysCount: return "\(c) / \(target) 天"
-        case .cupDay: return "\(c) / \(target) 杯"
+        case .daysCount: return "\(c) / \(goal) 天"
+        case .cupDay: return "\(c) / \(goal) 杯"
+        case .monthChallenge: return "\(c) / \(goal) 天"
+        case .collector: return "\(c) / \(goal) 枚"
         }
     }
 
     // 距解锁还差的文案 头部勾引/详情卡共用 nil=已解锁
     func hint(_ cur: Int) -> String? {
-        guard cur < target else { return nil }
+        guard cur < goal else { return nil }
+        if hidden { return "达成后揭晓" }
         switch kind {
-        case .streak: return "再坚持 \(target - cur) 天"
-        case .cups: return "再喝 \((target - cur).formatted()) 杯"
-        case .volume: return "再喝 \(Self.lit(target - cur)) L"
+        case .streak: return "再坚持 \(goal - cur) 天"
+        case .cups: return "再喝 \((goal - cur).formatted()) 杯"
+        case .volume: return "再喝 \(Self.lit(goal - cur)) L"
         case .firstLog: return "记下第一笔水"
-        case .overGoalDay: return "单日再冲 \(max(1, target - cur))%"
-        case .friday: return "再战 \(target - cur) 个周五"
-        case .bigSip: return "单笔喝满 \(target) ml"
+        case .overGoalDay: return "单日再冲 \(max(1, goal - cur))%"
+        case .friday: return "再战 \(goal - cur) 个周五"
+        case .bigSip: return "单笔喝满 \(goal) ml"
         case .earlyBird: return "早起记一笔"
         case .nightOwl: return "深夜记一笔"
-        case .taster: return "再解锁 \(target - cur) 种饮品"
-        case .coffee: return "再喝 \((target - cur).formatted()) 杯咖啡"
+        case .taster: return "再解锁 \(goal - cur) 种饮品"
+        case .coffee: return "再喝 \((goal - cur).formatted()) 杯咖啡"
         case .perfectWeek: return "一周七天全达标"
-        case .daysCount: return "再陪 \(target - cur) 天"
-        case .cupDay: return "单日再喝 \(target - cur) 杯"
+        case .daysCount: return "再陪 \(goal - cur) 天"
+        case .cupDay: return "单日再喝 \(goal - cur) 杯"
+        case .monthChallenge: return "本月再达标 \(goal - cur) 天"
+        case .midnight: return "零点档来一杯"
+        case .collector: return "还差 \(goal - cur) 枚"
         }
     }
 
@@ -231,6 +272,16 @@ enum Achievements {
               condition: "在 3 个周五达标", target: 3),
         Badge(id: "perfectweek", series: .special, kind: .perfectWeek, name: "满勤周", icon: "calendar.badge.checkmark",
               condition: "一个自然周 7 天全达标", target: 1),
+        // 限时挑战 每月刷新 当月清零重来
+        Badge(id: "monthly", series: .special, kind: .monthChallenge, name: "满月之诺", icon: "flag.2.crossed.fill",
+              condition: "本月达标 15 天", target: 15),
+        // 秘藏 条件不公开 达成后揭晓
+        Badge(id: "midnight", series: .mystery, kind: .midnight, name: "零点侠", icon: "0.circle.fill",
+              condition: "在午夜零点档记过一笔", target: 1, hidden: true),
+        Badge(id: "tank", series: .mystery, kind: .overGoalDay, name: "水箱本体", icon: "drop.circle.fill",
+              condition: "单日喝到当日目标的 200%", target: 200, hidden: true),
+        Badge(id: "collector", series: .mystery, kind: .collector, name: "收藏家", icon: "rosette",
+              condition: "集齐陈列室全部徽章", target: 999),
     ]
 
     // 已解锁id集合 评估与建档共用

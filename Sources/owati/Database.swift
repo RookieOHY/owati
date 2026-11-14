@@ -169,6 +169,11 @@ final class Database {
         """, [])
     }
 
+    // 0点档(00:00-00:59)记录数 秘藏·零点侠
+    func midnightRecords() -> Int {
+        queryInt("SELECT COUNT(*) FROM drink_records WHERE CAST(strftime('%H', ts) AS INTEGER) = 0", [])
+    }
+
     // 记过的饮品种类数 品鉴师
     func typeCount() -> Int {
         queryInt("SELECT COUNT(DISTINCT drink_type) FROM drink_records", [])
