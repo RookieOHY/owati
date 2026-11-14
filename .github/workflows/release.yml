@@ -11,12 +11,9 @@ jobs:
       contents: write   # 默认token只读 挂Release必须显式给写权限
     strategy:
       matrix:
-        include:
-          - runner: macos-latest    # M系
-            arch: aarch64
-          - runner: macos-13        # Intel
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+        # 单台arm64机器交叉编译双架构 --arch注入 macos-13排队太慢已弃用
+        arch: [aarch64, x86_64]
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 

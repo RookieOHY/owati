@@ -9,8 +9,12 @@ VERSION="${GITHUB_REF_NAME#v}"
 # 云端双架构时 Actions注入ARCH 产物名带后缀区分
 [ -n "$ARCH" ] && SUFFIX="-$ARCH"
 
-# 1. release 构建
-swift build -c release
+# 1. release构建 CI注入ARCH时交叉编译(--arch) 单台arm64机器双架构全包
+if [ -n "$ARCH" ]; then
+    swift build -c release --arch "$ARCH"
+else
+    swift build -c release
+fi
 
 # 2. 应用图标 多尺寸PNG -> icns
 swift Scripts/make_appicon.swift
