@@ -18,6 +18,7 @@ macOS 菜单栏喝水提醒工具。常驻菜单栏不打扰工作，到点温�
 
 ```bash
 brew tap RookieOHY/tap
+brew trust rookieohy/tap   # 新版brew的tap信任机制 首次需要
 brew install --cask owati
 ```
 
