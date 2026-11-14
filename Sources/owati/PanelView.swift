@@ -140,7 +140,16 @@ struct PanelView: View {
                             }
                             AchievementWindow.show()
                         }
-                        controlButton("帮助", "questionmark.circle", "3") { /* 帮助页后续做 */ }
+                        controlButton("帮助", "questionmark.circle", "3") {
+                            state.setHover(nil)
+                            state.hoverRow = nil
+                            // 和设置同款 先收面板再弹帮助窗 面板挡不住视线
+                            for w in NSApp.windows
+                            where !w.styleMask.contains(.titled) && w.frame.width <= 400 && w.frame.height > 80 {
+                                w.orderOut(nil)
+                            }
+                            HelpWindow.show()
+                        }
                         controlButton("实验室", "wand.and.stars", "4", active: state.showLab) {
                             state.setHover(nil)
                             state.hoverRow = nil
