@@ -277,6 +277,12 @@ struct SettingsView: View {
                         }
                     }
                     Divider()
+                    settingsRow("alarm.clock", .teal, "稍后时长") {
+                        popup(["5 分钟", "10 分钟", "15 分钟"], [5, 10, 15].firstIndex(of: cfg.snoozeMin) ?? 1) {
+                            cfg.snoozeMin = [5, 10, 15][$0]
+                        }
+                    }
+                    Divider()
                     settingsRow("flag", .red, "催促阈值",
                         help: "连续跳过提醒（点稍后、放超时都算跳过）达到这个次数、且期间没有新记录时，提醒文案会换成催促款；记录一次即清零。") {
                         HStack(spacing: 6) {

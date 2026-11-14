@@ -81,6 +81,10 @@ final class AppConfig: ObservableObject {
     @Published var nudgeSkips: Int {
         didSet { ud.set(nudgeSkips, forKey: "nudgeSkips") }
     }
+    // 稍后时长 分钟
+    @Published var snoozeMin: Int {
+        didSet { ud.set(snoozeMin, forKey: "snoozeMin") }
+    }
     // 达标后提醒间隔倍数 1不变 2温和 3更缓
     @Published var goalIntervalMult: Int {
         didSet {
@@ -145,6 +149,7 @@ final class AppConfig: ObservableObject {
         reminderStyle = d.object(forKey: "reminderStyle") as? Int ?? 0
         remindSound = d.string(forKey: "remindSound") ?? ""
         nudgeSkips = d.object(forKey: "nudgeSkips") as? Int ?? 2
+        snoozeMin = d.object(forKey: "snoozeMin") as? Int ?? 10
         goalIntervalMult = d.object(forKey: "goalIntervalMult") as? Int ?? 2
         overGoalSilence = d.object(forKey: "overGoalSilence") as? Int ?? 150
         menuRing = d.object(forKey: "menuRing") as? Bool ?? true

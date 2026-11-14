@@ -427,8 +427,8 @@ final class PanelState: ObservableObject {
         cdTimer = nil
     }
 
-    // 提醒卡上的稍后 10分钟后再来 算一次跳过
-    func snoozeCard(_ minutes: Int = 10) {
+    // 提醒卡上的稍后 按设置的时长推迟 算一次跳过
+    func snoozeCard() {
         // 预览中 稍后=只收卡 不动排程不计数
         if previewing {
             previewing = false
@@ -436,7 +436,7 @@ final class PanelState: ObservableObject {
             FullScreenReminder.shared.hide()
             return
         }
-        nextRemind = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        nextRemind = Date().addingTimeInterval(TimeInterval(AppConfig.shared.snoozeMin * 60))
         skipStreak += 1
         afkCatchup = false
         ReminderCard.shared.hide()
