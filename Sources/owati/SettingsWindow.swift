@@ -55,6 +55,8 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             // 顶部居中胶囊Tab 纯文本选中灰胶囊 HealthTick同款 与统计窗共用组件
             CapsuleTabs(titles: ["通用", "关于"], index: state.settingsTab) { state.settingsTab = $0 }
+                .frame(width: 240)
+                .frame(maxWidth: .infinity)   // 固定窄宽居中 不拉满整行
                 .padding(.top, 10)
                 .padding(.bottom, 12)
             // 内容 懒加载 只构建当前tab
@@ -250,7 +252,18 @@ struct SettingsView: View {
                     }
                     Divider()
                     settingsRow("bell", .teal, "提醒方式") {
-                        popup(["浮动卡片", "全屏页面"], cfg.reminderStyle) { cfg.reminderStyle = $0 }
+                        HStack(spacing: 14) {
+                            popup(["浮动卡片", "全屏页面"], cfg.reminderStyle) { cfg.reminderStyle = $0 }
+                            Button {
+                                PanelState.shared.previewReminder()
+                            } label: {
+                                Text("预览")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(.owAccent)
+                            }
+                            .buttonStyle(.plain)
+                            .help("立即预览当前提醒形态")
+                        }
                     }
                     Divider()
                     settingsRow("flag", .red, "催促阈值",
@@ -366,25 +379,358 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, 4)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
-            }
-            .padding(16)
-        }
-    }
 
-    // MARK: 关于页 卡片式
-    private var aboutPane: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader("关于")
+                // 数据与维护 HealthTick源码同款: 确认弹窗+完成绿勾反馈
+                sectionHeader("数据")
+                    .padding(.top, 4)
                 VStack(spacing: 0) {
-                    settingsRow("drop.fill", .blue, "owati") {
-                        Text(Self.version).font(.callout).foregroundColor(.secondary)
+                    dataRow(icon: "arrow.counterclockwise", color: .orange, label: "重置设置",
+                        hint: nil, btn: "重置", doneKey: "resetSettings") {
+                        confirmReset(title: "重置设置", message: "将恢复所有设置为默认值 打卡记录不受影响") {
+                            resetSettings()
+                            flashDone("resetSettings")
+                        }
+                    }
+                    Divider()
+                    dataRow(icon: "square.and.arrow.down", color: .teal, label: "导入数据",
+                        hint: "从导出的文件恢复记录和设置", btn: "导入", doneKey: "import") {
+                        importData()
+                    }
+                    Divider()
+                    dataRow(icon: "square.and.arrow.up", color: .blue, label: "导出数据",
+                        hint: "导出所有打卡记录和设置", btn: "导出", doneKey: "export") {
+                        exportData()
+                    }
+                    Divider()
+                    dataRow(icon: "trash", color: .red, label: "重置数据",
+                        hint: "清除所有打卡记录与目标覆盖 需三次确认", btn: "重置", doneKey: "resetData") {
+                        resetData()
                     }
                 }
                 .padding(.vertical, 4)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
             }
             .padding(16)
+        }
+    }
+
+    // 行图标小方块 settingsRow同款 单独提出
+    private func iconChip(_ icon: String, _ color: Color) -> some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(color.gradient)
+            .frame(width: 24, height: 24)
+            .overlay(
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white))
+    }
+
+    // 数据卡行 完成时按钮换绿勾2秒
+    private func dataRow(icon: String, color: Color, label: String, hint: String?, btn: String, doneKey: String, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 10) {
+                iconChip(icon, color)
+                Text(label)
+                    .font(.callout)
+                Spacer()
+                if state.dataDone == doneKey {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.green)
+                } else {
+                    actionBtn(btn, color) { action() }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            if let hint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 48)
+                    .padding(.bottom, 6)
+            }
+        }
+    }
+
+    // 彩色渐变胶囊动作按钮
+    private func actionBtn(_ title: String, _ color: Color, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(color.gradient, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // 完成反馈 绿勾显示2秒
+    private func flashDone(_ key: String) {
+        state.dataDone = key
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { state.dataDone = nil }
+    }
+
+    // 单次确认弹窗 HealthTick confirmReset同款
+    private func confirmReset(title: String, message: String, action: @escaping () -> Void) {
+        let a = NSAlert()
+        a.messageText = title
+        a.informativeText = message
+        a.alertStyle = .warning
+        a.addButton(withTitle: "确认")
+        a.addButton(withTitle: "取消")
+        if a.runModal() == .alertFirstButtonReturn { action() }
+    }
+
+    // 重置设置 恢复出厂默认值 记录不动
+    private func resetSettings() {
+        cfg.dailyGoalML = 2000
+        cfg.remindIntervalMin = 45
+        cfg.remindDays = [2, 3, 4, 5, 6]
+        cfg.remindStart = "09:00"
+        cfg.remindEnd = "19:00"
+        cfg.restEnabled = true
+        cfg.restStart = "12:00"
+        cfg.restEnd = "13:00"
+        cfg.soundOn = true
+        cfg.soundEffect = Sfx.canFizz.rawValue
+        cfg.remindSound = ""
+        cfg.reminderStyle = 0
+        cfg.meetingPause = true
+        cfg.nudgeSkips = 2
+        cfg.goalIntervalMult = 2
+        cfg.overGoalSilence = 150
+        cfg.cupML = 250
+        cfg.bottleML = 500
+        cfg.menuRing = true
+        cfg.menuCountdown = true
+    }
+
+    // 导出记录+目标覆盖+配置 到json
+    private func exportData() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "owati-backup.json"
+        let payload: [String: Any] = [
+            "app": "owati",
+            "version": 1,
+            "records": Database.shared.allRecords(),
+            "goal_overrides": Database.shared.allGoalOverrides(),
+            "config": cfg.configSnapshot(),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) else { return }
+        if panel.runModal() == .OK, let url = panel.url {
+            try? data.write(to: url)
+            flashDone("export")
+        }
+    }
+
+    // 导入 恢复记录+目标覆盖+设置 HealthTick同款: 文件大小守卫+失败弹窗
+    private func importData() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // 多年的用量也远小于1MB 拒绝大文件防止误选视频整个读进内存
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard size > 0, size <= 20 * 1024 * 1024 else {
+            importFailed("文件不合法或过大")
+            return
+        }
+        guard let data = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            importFailed("文件无法解析")
+            return
+        }
+        if let recs = obj["records"] as? [[String: Any]] {
+            for r in recs {
+                if let ts = r["ts"] as? String, let ml = r["ml"] as? Int,
+                   let date = r["date"] as? String, let type = r["type"] as? String {
+                    Database.shared.importRecord(ts: ts, ml: ml, date: date, type: type)
+                }
+            }
+        }
+        if let overrides = obj["goal_overrides"] as? [[String: Any]] {
+            for o in overrides {
+                if let d = o["date"] as? String, let ml = o["ml"] as? Int {
+                    Database.shared.setGoalOverride(date: d, ml: ml)
+                }
+            }
+        }
+        if let conf = obj["config"] as? [String: Any] {
+            cfg.applyImport(conf)
+        }
+        state.drinkPulse += 1
+        flashDone("import")
+    }
+
+    private func importFailed(_ msg: String) {
+        let a = NSAlert()
+        a.messageText = "导入失败"
+        a.informativeText = msg
+        a.alertStyle = .warning
+        a.addButton(withTitle: "好")
+        a.runModal()
+    }
+
+    // 重置数据 三次确认后清空 HealthTick: About页注明需三次确认
+    private func resetData() {
+        for i in 0..<3 {
+            let a = NSAlert()
+            a.messageText = "确认清除全部数据？(\(i + 1)/3)"
+            a.informativeText = i == 2
+                ? "这是最后一次确认 将删除所有打卡记录与目标覆盖 且不可恢复"
+                : "将删除所有打卡记录与目标覆盖 此操作不可恢复"
+            a.addButton(withTitle: "继续")
+            a.addButton(withTitle: "取消")
+            if a.runModal() != .alertFirstButtonReturn { return }
+        }
+        Database.shared.clearAllRecords()
+        state.clearUndo()
+        state.drinkPulse += 1
+        flashDone("resetData")
+    }
+
+    // MARK: 关于页 借鉴Hero布局但按产品自有形态重排
+    private var aboutPane: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 16) {
+                // 应用徽标 品牌水滴实底 无多余环
+                ZStack {
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(LinearGradient(colors: [Color.owAccent, Color(red: 0.04, green: 0.42, blue: 0.92)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 96, height: 96)
+                        .shadow(color: Color.owAccent.opacity(0.3), radius: 10, y: 5)
+                    if let glyph = Self.brandGlyph {
+                        Image(nsImage: glyph)
+                            .resizable()
+                            .frame(width: 54, height: 54)
+                    }
+                }
+                .padding(.top, 24)
+                // 名称与版本同行 裸跑读不到bundle就不显示胶囊
+                HStack(spacing: 8) {
+                    Text("owati")
+                        .font(.system(size: 22, weight: .bold))
+                    if Self.version != "开发版" {
+                        Text("v\(Self.version)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.primary.opacity(0.06), in: Capsule())
+                    }
+                }
+                Text("把喝水变成节奏")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                // 三枚功能点 横排
+                HStack(spacing: 18) {
+                    featureChip("drop", "喝水提醒")
+                    featureChip("target", "目标追踪")
+                    featureChip("chart.bar", "数据统计")
+                }
+                // 检查更新
+                VStack(spacing: 6) {
+                    Button {
+                        runUpdateCheck()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 12))
+                            Text("检查更新")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    if !state.updateStatus.isEmpty {
+                        Text(state.updateStatus)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                // 链接行
+                HStack(spacing: 10) {
+                    linkBtn("GitHub", "https://github.com/RookieOHY/owati")
+                    Text("·").foregroundColor(.secondary)
+                    linkBtn("反馈", "https://github.com/RookieOHY/owati/issues")
+                }
+                Text("菜单栏小管家 · 为你的健康而生 💧")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.7))
+                    .padding(.bottom, 12)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    // 功能点小片 图标+文字
+    private func featureChip(_ icon: String, _ title: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.owAccent)
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(0.05), in: Capsule())
+    }
+
+    private func linkBtn(_ title: String, _ url: String) -> some View {
+        Button {
+            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+        } label: {
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundColor(.primary.opacity(0.75))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // 品牌水滴 SVG矢量重栅216px 以54pt显示 4倍超采样 不糊
+    private static var brandGlyph: NSImage? {
+        let svgPath = (#filePath as NSString).deletingLastPathComponent + "/../../demo/owati.svg"
+        guard let svg = NSImage(contentsOfFile: svgPath) else { return nil }
+        let px = 216, pt = 54
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = NSSize(width: pt, height: pt)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        svg.draw(in: NSRect(x: 0, y: 0, width: pt, height: pt))
+        // 黑模板反白
+        NSColor.white.set()
+        NSRect(x: 0, y: 0, width: pt, height: pt).fill(using: .sourceAtop)
+        NSGraphicsContext.restoreGraphicsState()
+        return NSImage(data: rep.representation(using: .png, properties: [:])!) ?? NSImage(size: NSSize(width: pt, height: pt))
+    }
+
+    // 查GitHub最新release和当前版本比对 零依赖检查更新
+    private func runUpdateCheck() {
+        state.updateStatus = "检查中…"
+        let cur = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        guard let url = URL(string: "https://api.github.com/repos/RookieOHY/owati/releases/latest") else { return }
+        var req = URLRequest(url: url)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        Task {
+            var s = "暂时检查不了 稍后再试"
+            if let (data, _) = try? await URLSession.shared.data(for: req),
+               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+               let tag = obj["tag_name"] as? String {
+                s = !cur.isEmpty && tag.contains(cur) ? "已是最新版本 \(tag)" : "发现新版本 \(tag)"
+            }
+            await MainActor.run { state.updateStatus = s }
         }
     }
 

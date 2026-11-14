@@ -456,6 +456,55 @@ final class Database {
     }
 
     // 取单个整数 带参数绑定
+    // 导出用 全量记录
+    func allRecords() -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT ts, amount_ml, drink_type, date FROM drink_records ORDER BY id", -1, &stmt, nil) == SQLITE_OK else { return out }
+        defer { sqlite3_finalize(stmt) }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let ts = String(cString: sqlite3_column_text(stmt, 0))
+            let ml = Int(sqlite3_column_int(stmt, 1))
+            let type = String(cString: sqlite3_column_text(stmt, 2))
+            let date = String(cString: sqlite3_column_text(stmt, 3))
+            out.append(["ts": ts, "ml": ml, "type": type, "date": date])
+        }
+        return out
+    }
+
+    // 导出用 全量当日目标覆盖
+    func allGoalOverrides() -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT date, ml FROM goal_overrides ORDER BY date", -1, &stmt, nil) == SQLITE_OK else { return out }
+        defer { sqlite3_finalize(stmt) }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let date = String(cString: sqlite3_column_text(stmt, 0))
+            let ml = Int(sqlite3_column_int(stmt, 1))
+            out.append(["date": date, "ml": ml])
+        }
+        return out
+    }
+
+    // 导入用 按原始时间原样插回
+    func importRecord(ts: String, ml: Int, date: String, type: String) {
+        var stmt: OpaquePointer?
+        let sql = "INSERT INTO drink_records (amount_ml, ts, date, drink_type) VALUES (?, ?, ?, ?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(ml))
+        sqlite3_bind_text(stmt, 2, ts, -1, transient)
+        sqlite3_bind_text(stmt, 3, date, -1, transient)
+        sqlite3_bind_text(stmt, 4, type, -1, transient)
+        _ = sqlite3_step(stmt)
+    }
+
+    // 重置数据 清空全部打卡记录与目标覆盖
+    func clearAllRecords() {
+        execute("DELETE FROM drink_records")
+        execute("DELETE FROM goal_overrides")
+    }
+
     private func queryInt(_ sql: String, _ params: [String]) -> Int {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }

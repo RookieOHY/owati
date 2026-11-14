@@ -157,4 +157,54 @@ final class AppConfig: ObservableObject {
     static func applyAppearance(_ v: Int) {
         NSApplication.shared.appearance = v == 1 ? NSAppearance(named: .aqua) : v == 2 ? NSAppearance(named: .darkAqua) : nil
     }
+
+    // 导出用 配置快照
+    func configSnapshot() -> [String: Any] {
+        [
+            "dailyGoalML": dailyGoalML,
+            "remindIntervalMin": remindIntervalMin,
+            "remindDays": Array(remindDays),
+            "remindStart": remindStart,
+            "remindEnd": remindEnd,
+            "restEnabled": restEnabled,
+            "restStart": restStart,
+            "restEnd": restEnd,
+            "soundOn": soundOn,
+            "soundEffect": soundEffect,
+            "remindSound": remindSound,
+            "reminderStyle": reminderStyle,
+            "meetingPause": meetingPause,
+            "nudgeSkips": nudgeSkips,
+            "goalIntervalMult": goalIntervalMult,
+            "overGoalSilence": overGoalSilence,
+            "cupML": cupML,
+            "bottleML": bottleML,
+            "menuRing": menuRing,
+            "menuCountdown": menuCountdown,
+        ]
+    }
+
+    // 导入用 逐项恢复 有的才写
+    func applyImport(_ d: [String: Any]) {
+        if let v = d["dailyGoalML"] as? Int { dailyGoalML = v }
+        if let v = d["remindIntervalMin"] as? Int { remindIntervalMin = v }
+        if let v = d["remindDays"] as? [Int] { let s = Set(v); if !s.isEmpty { remindDays = s } }
+        if let v = d["remindStart"] as? String { remindStart = v }
+        if let v = d["remindEnd"] as? String { remindEnd = v }
+        if let v = d["restEnabled"] as? Bool { restEnabled = v }
+        if let v = d["restStart"] as? String { restStart = v }
+        if let v = d["restEnd"] as? String { restEnd = v }
+        if let v = d["soundOn"] as? Bool { soundOn = v }
+        if let v = d["soundEffect"] as? String { soundEffect = v }
+        if let v = d["remindSound"] as? String { remindSound = v }
+        if let v = d["reminderStyle"] as? Int { reminderStyle = v }
+        if let v = d["meetingPause"] as? Bool { meetingPause = v }
+        if let v = d["nudgeSkips"] as? Int { nudgeSkips = v }
+        if let v = d["goalIntervalMult"] as? Int { goalIntervalMult = v }
+        if let v = d["overGoalSilence"] as? Int { overGoalSilence = v }
+        if let v = d["cupML"] as? Int { cupML = v }
+        if let v = d["bottleML"] as? Int { bottleML = v }
+        if let v = d["menuRing"] as? Bool { menuRing = v }
+        if let v = d["menuCountdown"] as? Bool { menuCountdown = v }
+    }
 }

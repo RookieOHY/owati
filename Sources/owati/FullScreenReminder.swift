@@ -23,6 +23,7 @@ final class FullScreenReminder {
         panels.forEach { $0.orderOut(nil) }
         PanelState.shared.fullScreenVisible = false
         PanelState.shared.stopFullScreenCountdown()
+        PanelState.shared.previewing = false
     }
 
     // 每块屏幕盖一层
@@ -110,7 +111,7 @@ struct FullScreenReminderView: View {
         var body: some View {
             let left = state.fullScreenLeft
             VStack(spacing: 4) {
-                Text("\(left)s 后自动关闭")
+                Text(state.previewing ? "预览中 · \(left)s 后自动关闭" : "\(left)s 后自动关闭")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.primary.opacity(0.6))
                     .monospacedDigit()

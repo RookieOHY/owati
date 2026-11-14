@@ -37,6 +37,9 @@ final class PanelState: ObservableObject {
     @Published var layoutJumping = false      // 窗口跳变中 装饰层暂停绘制防错位闪现
     @Published var settingsTab = 0        // 设置窗口侧栏 0通用 1关于
     @Published var helpOpen: String? = nil // 设置页问号帮助当前打开的行
+    @Published var previewing = false      // 预览中 真实提醒的跳过计数/排程不介入
+    @Published var dataDone: String? = nil // 数据卡刚完成的项 按钮换绿勾2秒
+    @Published var updateStatus = ""       // 关于页检查更新结果文案
     @Published var statsHoverBar: Int? = nil   // 统计柱状图悬停列
     @Published var statsRange = 0         // 统计窗 0近7天 1近30天 卡片跟着切
     @Published var statsHoverCard: Int? = nil  // 统计指标卡悬停序号 驱动浮起动效
@@ -371,7 +374,7 @@ final class PanelState: ObservableObject {
             if self.fullScreenLeft <= 0 {
                 self.cdTimer?.invalidate()
                 self.cdTimer = nil
-                self.skipStreak += 1
+                if !self.previewing { self.skipStreak += 1 }
                 FullScreenReminder.shared.hide()
             }
         }
@@ -384,6 +387,13 @@ final class PanelState: ObservableObject {
 
     // 提醒卡上的稍后 10分钟后再来 算一次跳过
     func snoozeCard(_ minutes: Int = 10) {
+        // 预览中 稍后=只收卡 不动排程不计数
+        if previewing {
+            previewing = false
+            ReminderCard.shared.hide()
+            FullScreenReminder.shared.hide()
+            return
+        }
         nextRemind = Date().addingTimeInterval(TimeInterval(minutes * 60))
         skipStreak += 1
         afkCatchup = false
@@ -393,8 +403,11 @@ final class PanelState: ObservableObject {
 
     // 快速记一笔 量可传 提醒卡/全屏页共用
     func quickLog(ml: Int) {
+        // 预览中按钮不写库 纯演示
+        guard !previewing else { return }
         let id = Database.shared.addDrink(ml, type: .water)
         guard id != 0 else { return }
+        previewing = false
         skipStreak = 0   // 记录了 跳过连击清零 tips回到温和池
         SoundPlayer.shared.playLog()   // 和面板同一声 开罐音
         drinkPulse += 1
@@ -423,9 +436,9 @@ final class PanelState: ObservableObject {
     private func remindTick() {
         let now = Date()
         let idle = idleSeconds()
-        // 全屏页到自动关闭时刻 算一次跳过
+        // 全屏页到自动关闭时刻 算一次跳过(预览中不计数)
         if fullScreenVisible && now >= fullScreenDeadline {
-            skipStreak += 1
+            if !previewing { skipStreak += 1 }
             FullScreenReminder.shared.hide()
         }
         // 会议应用在前台 暂停这轮 2分钟后再看
@@ -480,6 +493,17 @@ final class PanelState: ObservableObject {
             ReminderCard.shared.show(text: text)
         }
         SoundPlayer.shared.playRemind()   // 提醒出现也有一声 轻的
+    }
+
+    // 设置页预览当前提醒形态 不动排程不计跳过 也无视达标降级 所见即所选
+    func previewReminder() {
+        previewing = true
+        if AppConfig.shared.reminderStyle == 1 {
+            FullScreenReminder.shared.show(tip: Self.fullScreenTips.randomElement() ?? "")
+        } else {
+            ReminderCard.shared.show(text: "该喝水了")
+        }
+        SoundPlayer.shared.playRemind()
     }
 
     // 前台应用命中会议关键词
