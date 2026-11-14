@@ -14,7 +14,14 @@ macOS 菜单栏喝水提醒工具。常驻菜单栏不打扰工作，到点温�
 
 ## 安装
 
-前往 [Releases](https://github.com/RookieOHY/owati/releases/latest) 下载对应架构的 `.dmg`：
+**Homebrew**（推荐，自动更新）：
+
+```bash
+brew tap RookieOHY/tap
+brew install --cask owati
+```
+
+或前往 [Releases](https://github.com/RookieOHY/owati/releases/latest) 下载对应架构的 `.dmg`：
 
 - Apple Silicon（M 系列）：`owati-x.y.z-aarch64.dmg`
 - Intel：`owati-x.y.z-x86_64.dmg`
