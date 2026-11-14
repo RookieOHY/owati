@@ -561,6 +561,7 @@ struct SettingsView: View {
         if let conf = obj["config"] as? [String: Any] {
             cfg.applyImport(conf)
         }
+        Database.shared.checkpoint()
         state.drinkPulse += 1
         flashDone("import")
     }

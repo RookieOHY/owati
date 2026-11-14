@@ -37,6 +37,7 @@ final class PanelState: ObservableObject {
     var editingOldML = 0                      // 进编辑前的量 算撤销用
     @Published var undo: UndoAction? = nil    // 最近一次可撤销操作
     @Published var undoText = ""
+    @Published var undoWiggle: Double = 0        // 撤销条出现时的轻摆角度
     @Published var dateMode = 0          // 右上角 0公历 1农历 2周五判断 点击循环
     @Published var hoverGoal = false     // 悬停"今日目标" 显示数值提示
     @Published var hoverBtn: String? = nil   // 底栏悬停的按钮名 悬停亮蓝
@@ -98,6 +99,7 @@ final class PanelState: ObservableObject {
     @Published var cardBreath = false           // 水滴呼吸动画驱动
     private var menuGlyph: NSImage?
     private var menuTimer: Timer?
+    @Published var panelLive = false          // 面板窗口可见中 隐藏时暂停30fps动画时钟省CPU
     var skipStreak = 0                          // 连续跳过且没记录的次数 够2次换催促tips
 
     // tips池 轮换防审美疲劳
@@ -195,6 +197,9 @@ final class PanelState: ObservableObject {
     func setUndo(_ a: UndoAction, text: String) {
         undo = a
         undoText = text
+        // 出现瞬间从-5°弹回 低阻尼spring自带两次轻摆
+        undoWiggle = -5
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.undoWiggle = 0 }
         undoToken += 1
         let token = undoToken
         undoWork?.cancel()
@@ -524,19 +529,34 @@ final class PanelState: ObservableObject {
             return
         }
         if AppConfig.shared.reminderStyle == 1 {
-            let pool = skipStreak >= max(1, AppConfig.shared.nudgeSkips) ? Self.urgingTips : Self.fullScreenTips
-            FullScreenReminder.shared.show(tip: pool.randomElement() ?? "")
+            FullScreenReminder.shared.show(tip: composeTip())
         } else {
             ReminderCard.shared.show(text: text)
         }
         SoundPlayer.shared.playRemind()   // 提醒出现也有一声 轻的
     }
 
+    // tips拼装 上次喝水体感前缀 + 池子抽一句(连跳达阈值换催促池)
+    private func composeTip() -> String {
+        let pool = skipStreak >= max(1, AppConfig.shared.nudgeSkips) ? Self.urgingTips : Self.fullScreenTips
+        return (lastDrinkAgoText().map { $0 + " · " } ?? "") + (pool.randomElement() ?? "")
+    }
+
+    // 距上次喝水的体感文案 今天没记录给开张款
+    private func lastDrinkAgoText() -> String? {
+        let recs = Database.shared.todayRecords()
+        guard let last = recs.last else { return "今天还没开张" }
+        let m = Int(Date().timeIntervalSince(last.date) / 60)
+        if m < 1 { return "刚刚才喝过" }
+        if m < 60 { return "上次喝水是 \(m) 分钟前" }
+        return "上次喝水是 \(m / 60) 小时前"
+    }
+
     // 设置页预览当前提醒形态 不动排程不计跳过 也无视达标降级 所见即所选
     func previewReminder() {
         previewing = true
         if AppConfig.shared.reminderStyle == 1 {
-            FullScreenReminder.shared.show(tip: Self.fullScreenTips.randomElement() ?? "")
+            FullScreenReminder.shared.show(tip: composeTip())
         } else {
             ReminderCard.shared.show(text: "该喝水了")
         }
@@ -558,7 +578,7 @@ final class PanelState: ObservableObject {
             .min() ?? 0
     }
 
-    // 提醒时段判断 时间段内+提醒日+非休息段
+    // 提醒时段判断 提醒日+提醒窗口+勿扰段 都支持跨零点(开始>结束=跨到明天)
     func remindAllowed(_ now: Date) -> Bool {
         let c = AppConfig.shared
         let cal = Calendar.current
@@ -568,8 +588,12 @@ final class PanelState: ObservableObject {
             return p.count == 2 ? p[0] * 60 + p[1] : 0
         }
         let nowMin = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
-        guard nowMin >= mins(c.remindStart), nowMin <= mins(c.remindEnd) else { return false }
-        if c.restEnabled, nowMin >= mins(c.restStart), nowMin <= mins(c.restEnd) { return false }
+        // 跨零点语义: 开始<=结束=同日普通区间 开始>结束=跨到明天(22:00-07:00 = 晚十点到早七点)
+        func inWindow(_ nowMin: Int, _ start: Int, _ end: Int) -> Bool {
+            start <= end ? (nowMin >= start && nowMin <= end) : (nowMin >= start || nowMin <= end)
+        }
+        guard inWindow(nowMin, mins(c.remindStart), mins(c.remindEnd)) else { return false }
+        if c.restEnabled, inWindow(nowMin, mins(c.restStart), mins(c.restEnd)) { return false }
         return true
     }
 }

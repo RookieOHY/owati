@@ -38,7 +38,7 @@ struct WaveRing: View {
             }
             .padding(3)
             // 波浪 双层 一深一浅错开动 相位累加 庆祝时奔腾
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !PanelState.shared.panelLive)) { ctx in
                 let p = PanelState.shared.advanceWave(now: ctx.date, celebrate: celebrate)
                 ZStack {
                     WaveShape(level: waterLevel, phase: p + 1.3, amplitude: 4)

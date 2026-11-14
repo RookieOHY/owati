@@ -8,6 +8,7 @@ final class FullScreenReminder {
     private var hideWork: DispatchWorkItem?
 
     private var cachedBg: (size: CGSize, image: NSImage)?
+    private var themeToken: (any NSObjectProtocol)?
 
     func show(tip: String) {
         let state = PanelState.shared
@@ -16,13 +17,28 @@ final class FullScreenReminder {
         state.fullScreenVisible = true
         state.startFullScreenCountdown()
         ensurePanels()
-        // 背景烘焙一次 尺寸没变就复用
+        installAppearanceObserver()
+        rebakeBackground()
+        panels.forEach { $0.orderFrontRegardless() }
+    }
+
+    // 外观切换(手动深浅色/日落自动切换) 重烘blob位图适配新外观
+    private func installAppearanceObserver() {
+        guard themeToken == nil, let app = NSApp else { return }
+        themeToken = app.observe(\.effectiveAppearance, options: [.initial]) { [weak self] _, _ in
+            self?.rebakeBackground(force: true)
+        }
+    }
+
+    // 背景烘焙 外观变化时force重烘
+    private func rebakeBackground(force: Bool = false) {
         let size = NSScreen.main?.frame.size ?? CGSize(width: 1920, height: 1080)
-        if cachedBg?.size != size {
+        if force || cachedBg?.size != size {
             cachedBg = (size, Self.renderBlobs(size: size))
         }
-        state.fullScreenBg = cachedBg?.image
-        panels.forEach { $0.orderFrontRegardless() }
+        if PanelState.shared.fullScreenVisible {
+            PanelState.shared.fullScreenBg = cachedBg?.image
+        }
     }
 
     // 水色blob烘进位图 径向渐变自带柔边 代替blur(90)每帧重算

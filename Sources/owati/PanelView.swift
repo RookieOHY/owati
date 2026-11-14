@@ -48,7 +48,7 @@ struct PanelView: View {
     }()
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { ctx in // 秒级时钟 驱动日期和倒计时
+        TimelineView(.animation(minimumInterval: 1, paused: !state.panelLive)) { ctx in // 秒级时钟 驱动日期和倒计时 面板隐藏时暂停
             let _ = state.checkGoal(consumedML: consumedML, goal: todayGoal)
             VStack(spacing: 0) {
                 // 主页
@@ -180,6 +180,13 @@ struct PanelView: View {
             state.customText = ""
             state.editingId = nil   // 行内ml编辑取消
             state.editingText = ""
+            state.panelLive = false   // 面板不可见 30fps动画时钟暂停
+        }
+        // 面板打开(得key) 动画时钟恢复
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            guard let w = note.object as? NSWindow,
+                  !w.styleMask.contains(.titled), w.frame.height > 80, w.frame.width <= 400 else { return }
+            state.panelLive = true
         }
     }
 
@@ -332,7 +339,7 @@ struct PanelView: View {
     // 产品logo 呼吸灯 无色→蓝→无色 5秒一周期 MacBook呼吸灯同款节奏
     // 双层叠加: 底层常驻原色 顶层蓝色随呼吸盖上 颜色是真插值不是透明度闪
     var logoBreath: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !state.panelLive)) { ctx in
             let s = 0.5 + 0.5 * sin(ctx.date.timeIntervalSinceReferenceDate * 2 * .pi / 5.0)
             ZStack {
                 if let logo = Self.productLogo {

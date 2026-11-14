@@ -166,7 +166,7 @@ extension PanelView {
         }
     }
 
-    // 撤销条 最近一次删除/修改可反悔
+    // 撤销条 最近一次删除/修改可反惠 出现时轻摆定住
     var undoBar: some View {
         HStack(spacing: 5) {
             Image(systemName: "arrow.uturn.backward.circle")
@@ -185,6 +185,9 @@ extension PanelView {
             .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity)
+        // 出现时从-5°spring回正 低阻尼自带两次小摆
+        .rotationEffect(.degrees(state.undoWiggle))
+        .animation(.spring(duration: 0.35, bounce: 0.4), value: state.undoWiggle)
     }
 
     // 执行撤销

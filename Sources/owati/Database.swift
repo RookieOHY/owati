@@ -499,10 +499,16 @@ final class Database {
         _ = sqlite3_step(stmt)
     }
 
-    // 重置数据 清空全部打卡记录与目标覆盖
+    // 批量导入完成 誊回主文件 WAL归零
+    func checkpoint() {
+        execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    }
+
+    // 重置数据 清空全部打卡记录与目标覆盖 并把WAL日志誊回主文件归零
     func clearAllRecords() {
         execute("DELETE FROM drink_records")
         execute("DELETE FROM goal_overrides")
+        execute("PRAGMA wal_checkpoint(TRUNCATE)")
     }
 
     private func queryInt(_ sql: String, _ params: [String]) -> Int {
