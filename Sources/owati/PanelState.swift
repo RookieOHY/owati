@@ -12,6 +12,20 @@ enum UndoAction {
 // 面板交互状态
 final class PanelState: ObservableObject {
     static let shared = PanelState()
+
+    // 订阅配置变更事件 Config只发事件 处理逻辑归引擎层
+    private init() {
+        AppConfig.shared.onChange = { [weak self] change in
+            switch change {
+            case .goal:
+                self?.evaluateBadges()
+            case .goalInterval:
+                self?.scheduleNext(from: Date())
+            case .menuDisplay:
+                self?.renderMenuBar()
+            }
+        }
+    }
     @Published var unitIndex = 0          // 剩余 0 ml 1 L 2 升
     @Published var showCountdown = false  // 下次提醒 时刻 <-> 倒计时
     @Published var hoverDay: Int? = nil   // 周水滴悬停的列序号
@@ -32,7 +46,27 @@ final class PanelState: ObservableObject {
     @Published var customText = ""
     @Published var customType: DrinkType = .water  // 自定义记录选的类型
     @Published var celebrate = false      // 达标庆祝 一次性
-    @Published var drinkPulse = 0         // 记录一笔后+1 驱动面板立即刷新
+    @Published var drinkPulse = 0 {         // 记录一笔后+1 驱动面板立即刷新
+        didSet { statsFetchedAt = .distantPast }   // 记录变了 菜单栏缓存失效
+    }
+    // 当日量缓存 菜单栏每秒渲染读缓存 不再每秒查SQLite
+    private var cachedDay = ""
+    private var cachedTotalML = 0
+    private var cachedGoalML = 0
+    private var statsFetchedAt = Date.distantPast
+
+    // 取当日总量/目标 带缓存: 跨天或记录变化或超过5秒才真正查库
+    func menuStats() -> (total: Int, goal: Int) {
+        let now = Date()
+        let day = Database.dayFormat.string(from: now)
+        if day != cachedDay || now.timeIntervalSince(statsFetchedAt) > 5 {
+            cachedDay = day
+            cachedGoalML = Database.shared.todayGoalOverride() ?? AppConfig.shared.dailyGoalML
+            cachedTotalML = Database.shared.todayTotalML()
+            statsFetchedAt = now
+        }
+        return (cachedTotalML, cachedGoalML)
+    }
     @Published var panelHeight: CGFloat = 0   // 内容实测高度 用于同步窗口
     @Published var layoutJumping = false      // 窗口跳变中 装饰层暂停绘制防错位闪现
     @Published var settingsTab = 0        // 设置窗口侧栏 0通用 1关于
@@ -59,6 +93,7 @@ final class PanelState: ObservableObject {
     @Published var fullScreenVisible = false    // 全屏提醒在不在
     @Published var fullScreenDeadline = Date()  // 全屏自动关闭时刻
     @Published var fullScreenLeft = 30          // 全屏剩余秒数 引擎Timer驱动 TimelineView不跳
+    @Published var fullScreenBg: NSImage?       // 全屏背景 烘焙成静态位图 不再每帧blur
     @Published var menuBarImage = NSImage(size: NSSize(width: 22, height: 22))  // 菜单栏动态图标 环+倒计时
     @Published var cardBreath = false           // 水滴呼吸动画驱动
     private var menuGlyph: NSImage?
@@ -283,8 +318,10 @@ final class PanelState: ObservableObject {
         let now = Date()
         let sleeping = remindSleeping(now)
         let c = AppConfig.shared
-        let goal = Database.shared.todayGoalOverride() ?? c.dailyGoalML
-        let progress = goal > 0 ? min(1, Double(Database.shared.todayTotalML()) / Double(goal)) : 0
+        // 走缓存 每秒渲染不再查SQLite
+        let stats = menuStats()
+        let goal = stats.goal
+        let progress = goal > 0 ? min(1, Double(stats.total) / Double(goal)) : 0
         // 倒计时文本 滴答清单同款 恒 h:mm:ss
         var text: String?
         if c.menuCountdown && !sleeping {

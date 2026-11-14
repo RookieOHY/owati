@@ -7,6 +7,8 @@ final class FullScreenReminder {
     private var panels: [NSPanel] = []
     private var hideWork: DispatchWorkItem?
 
+    private var cachedBg: (size: CGSize, image: NSImage)?
+
     func show(tip: String) {
         let state = PanelState.shared
         state.fullScreenTip = tip
@@ -14,7 +16,36 @@ final class FullScreenReminder {
         state.fullScreenVisible = true
         state.startFullScreenCountdown()
         ensurePanels()
+        // 背景烘焙一次 尺寸没变就复用
+        let size = NSScreen.main?.frame.size ?? CGSize(width: 1920, height: 1080)
+        if cachedBg?.size != size {
+            cachedBg = (size, Self.renderBlobs(size: size))
+        }
+        state.fullScreenBg = cachedBg?.image
         panels.forEach { $0.orderFrontRegardless() }
+    }
+
+    // 水色blob烘进位图 径向渐变自带柔边 代替blur(90)每帧重算
+    private static func renderBlobs(size: CGSize) -> NSImage {
+        let img = NSImage(size: size)
+        img.lockFocus()
+        let blue = NSColor(Color.owAccent)
+        let specs: [(color: NSColor, frac: CGFloat, xf: CGFloat, yf: CGFloat)] = [
+            (blue, 0.65, 0.5, 0.55),
+            (.systemTeal, 0.45, 0.82, 0.2),
+            (.systemBlue, 0.45, 0.15, 0.75),
+            (.systemCyan, 0.35, 0.2, 0.18),
+        ]
+        for (c, frac, xf, yf) in specs {
+            let r = size.width * frac / 2
+            let center = NSPoint(x: size.width * xf, y: size.height * yf)
+            let path = NSBezierPath(ovalIn: NSRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2))
+            let g = NSGradient(colors: [c.withAlphaComponent(0.5), c.withAlphaComponent(0)])!
+            g.draw(fromCenter: center, radius: 0,
+                   toCenter: center, radius: r, options: [])
+        }
+        img.unlockFocus()
+        return img
     }
 
     func hide() {
@@ -79,29 +110,16 @@ struct FullScreenReminderView: View {
         func updateNSView(_ v: NSVisualEffectView, context: Context) {}
     }
 
-    // 真原生玻璃 behindWindow会把背后的真实屏幕内容磨砂掉 水滴蓝打底 品牌色不缺席
+    // 背景 真玻璃 + 烘焙好的blob静态位图 零每帧成本
     private var background: some View {
         ZStack {
             NativeGlass()
-            blob(.owAccent, size: 0.65, x: 0.5, y: 0.55)
-            blob(.teal, size: 0.45, x: 0.82, y: 0.2)
-            blob(.blue, size: 0.45, x: 0.15, y: 0.75)
-            blob(.cyan, size: 0.35, x: 0.2, y: 0.18)
+            if let bg = state.fullScreenBg {
+                Image(nsImage: bg)
+                    .resizable()
+            }
         }
-        .blur(radius: 70)
         .ignoresSafeArea()
-    }
-
-    private func blob(_ color: Color, size: CGFloat, x: CGFloat, y: CGFloat) -> some View {
-        GeometryReader { g in
-            Circle()
-                .fill(
-                    RadialGradient(colors: [color.opacity(0.5), color.opacity(0.0)],
-                                   center: .center, startRadius: 0, endRadius: g.size.width * size / 2)
-                )
-                .frame(width: g.size.width * size, height: g.size.width * size)
-                .position(x: g.size.width * x, y: g.size.height * y)
-        }
     }
 
     // 自动关闭徽章 秒数+微进度条 绑引擎发布的剩余秒数

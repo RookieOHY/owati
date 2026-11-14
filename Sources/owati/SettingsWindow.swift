@@ -697,8 +697,8 @@ struct SettingsView: View {
 
     // 品牌水滴 SVG矢量重栅216px 以54pt显示 4倍超采样 不糊
     private static var brandGlyph: NSImage? {
-        let svgPath = (#filePath as NSString).deletingLastPathComponent + "/../../demo/owati.svg"
-        guard let svg = NSImage(contentsOfFile: svgPath) else { return nil }
+        guard let svgPath = Res.path("demo/owati.svg"),
+              let svg = NSImage(contentsOfFile: svgPath) else { return nil }
         let px = 216, pt = 54
         let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,

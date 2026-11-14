@@ -9,12 +9,16 @@ final class AppConfig: ObservableObject {
 
     private let ud = UserDefaults.standard
 
+    // 配置变更事件 PanelState订阅处理 解除Config→PanelState反向耦合
+    enum Change { case goal, goalInterval, menuDisplay }
+    var onChange: ((Change) -> Void)?
+
     // 每日喝水目标 ml
     @Published var dailyGoalML: Int {
         didSet {
             ud.set(dailyGoalML, forKey: "dailyGoalML")
-            // 目标变了 streak/单日达标率/满勤周口径全跟着变 徽章重评
-            PanelState.shared.evaluateBadges()
+            // 目标变了 streak/单日达标率/满勤周口径全跟着变 徽章重评(由订阅方处理)
+            onChange?(.goal)
         }
     }
     // 提醒间隔 分钟
@@ -81,8 +85,8 @@ final class AppConfig: ObservableObject {
     @Published var goalIntervalMult: Int {
         didSet {
             ud.set(goalIntervalMult, forKey: "goalIntervalMult")
-            // 改节奏立即重排 面板倒计时同步
-            PanelState.shared.scheduleNext(from: Date())
+            // 改节奏立即重排 面板倒计时同步(由订阅方处理)
+            onChange?(.goalInterval)
         }
     }
     // 超额静音阈值 0关闭 150/200=超额百分比后彻底安静
@@ -93,14 +97,14 @@ final class AppConfig: ObservableObject {
     @Published var menuRing: Bool {
         didSet {
             ud.set(menuRing, forKey: "menuRing")
-            PanelState.shared.renderMenuBar()   // 立即重绘
+            onChange?(.menuDisplay)   // 立即重绘(由订阅方处理)
         }
     }
     // 菜单栏图标右侧显示倒计时文本
     @Published var menuCountdown: Bool {
         didSet {
             ud.set(menuCountdown, forKey: "menuCountdown")
-            PanelState.shared.renderMenuBar()
+            onChange?(.menuDisplay)
         }
     }
     // 会议应用在前台自动暂停提醒
