@@ -150,6 +150,45 @@ final class Database {
         queryInt("SELECT COUNT(*) FROM drink_records", [])
     }
 
+    // 单笔最大原始量 鲸饮徽章
+    func maxSingleML() -> Int {
+        queryInt("SELECT COALESCE(MAX(amount_ml), 0) FROM drink_records", [])
+    }
+
+    // 7点前有记录的笔数 清晨第一滴
+    func dawnRecords() -> Int {
+        queryInt("SELECT COUNT(*) FROM drink_records WHERE CAST(strftime('%H', ts) AS INTEGER) < 7", [])
+    }
+
+    // 23点后(含凌晨0-4点)记录数 夜猫子补给
+    func nightRecords() -> Int {
+        queryInt("""
+            SELECT COUNT(*) FROM drink_records
+            WHERE CAST(strftime('%H', ts) AS INTEGER) >= 23
+               OR CAST(strftime('%H', ts) AS INTEGER) < 5
+        """, [])
+    }
+
+    // 记过的饮品种类数 品鉴师
+    func typeCount() -> Int {
+        queryInt("SELECT COUNT(DISTINCT drink_type) FROM drink_records", [])
+    }
+
+    // 某类饮品累计杯数 咖啡因账户
+    func cups(of type: DrinkType) -> Int {
+        queryInt("SELECT COUNT(*) FROM drink_records WHERE drink_type = ?", [type.rawValue])
+    }
+
+    // 有记录的天数(不要求连续) 老朋友
+    func recordedDays() -> Int {
+        queryInt("SELECT COUNT(DISTINCT date) FROM drink_records", [])
+    }
+
+    // 历史单日最高杯数 大水牛
+    func bestDayCups() -> Int {
+        queryInt("SELECT COALESCE(MAX(c), 0) FROM (SELECT COUNT(*) AS c FROM drink_records GROUP BY date)", [])
+    }
+
     // 连续达标天数 今天没达标不算断 从昨天继续数
     func streakDays(goalML: Int) -> Int {
         streakDays(on: Self.dayFormat.string(from: Date()), goalML: goalML)

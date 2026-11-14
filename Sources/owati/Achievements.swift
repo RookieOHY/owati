@@ -10,13 +10,15 @@ enum BadgeSeries: CaseIterable {
     case streak    // 连续达标
     case volume    // 累计总量
     case cups      // 累计杯数
-    case special   // 高光时刻 单日与彩蛋
+    case rhythm    // 生活节奏 作息与口味
+    case special   // 高光时刻 单日单次与彩蛋
 
     var title: String {
         switch self {
         case .streak: return "连续达标"
         case .volume: return "累计总量"
         case .cups: return "累计杯数"
+        case .rhythm: return "生活节奏"
         case .special: return "高光时刻"
         }
     }
@@ -24,8 +26,9 @@ enum BadgeSeries: CaseIterable {
     var icon: String {
         switch self {
         case .streak: return "calendar"
-        case .volume: return "drop.fill"
-        case .cups: return "mug.fill"
+        case .volume: return "sum"      // 与统计窗"累计水合量"同源 免得和streak3水滴撞
+        case .cups: return "number"
+        case .rhythm: return "clock"
         case .special: return "sparkles"
         }
     }
@@ -39,6 +42,14 @@ enum BadgeKind {
     case firstLog     // 记过第一笔 0/1
     case overGoalDay  // 历史单日最高达标率% 150解锁
     case friday       // 达标过的周五次数
+    case bigSip       // 单笔最大原始ml 500解锁
+    case earlyBird    // 7点前记过一笔 0/1
+    case nightOwl     // 23点后(含凌晨)记过一笔 0/1
+    case taster       // 记过的饮品种类数 5解锁
+    case coffee       // 咖啡累计杯数
+    case perfectWeek  // 存在一个自然周七天全达标 0/1
+    case daysCount    // 有记录的天数(不要求连续)
+    case cupDay       // 历史单日最高杯数
 }
 
 struct Badge: Identifiable {
@@ -79,6 +90,34 @@ struct Badge: Identifiable {
                 }
             }
             return kind == .overGoalDay ? best : fridays
+        case .bigSip:
+            return db.maxSingleML()
+        case .earlyBird:
+            return min(db.dawnRecords(), 1)
+        case .nightOwl:
+            return min(db.nightRecords(), 1)
+        case .taster:
+            return db.typeCount()
+        case .coffee:
+            return db.cups(of: .coffee)
+        case .perfectWeek:
+            // 自然周内七天全达标 有记录日才算 空日不可能达标
+            let def = AppConfig.shared.dailyGoalML
+            let days = db.dayTotals()
+            let ov = db.goalOverrides(dates: days.map { $0.date })
+            let cal = Calendar.current
+            var weekMet: [Date: Int] = [:]
+            for d in days {
+                let goal = ov[d.date] ?? def
+                guard goal > 0, d.ml >= goal, let day = Database.dayFormat.date(from: d.date),
+                      let wk = cal.dateInterval(of: .weekOfYear, for: day)?.start else { continue }
+                weekMet[wk, default: 0] += 1
+            }
+            return weekMet.values.contains(7) ? 1 : 0
+        case .daysCount:
+            return db.recordedDays()
+        case .cupDay:
+            return db.bestDayCups()
         }
     }
 
@@ -94,6 +133,13 @@ struct Badge: Identifiable {
         case .firstLog: return c >= 1 ? "1 / 1" : "0 / 1"
         case .overGoalDay: return "单日最高 \(c)% · 目标 \(target)%"
         case .friday: return "\(min(cur, target)) / \(target) 次"
+        case .bigSip: return "\(c.formatted()) / \(target.formatted()) ml"
+        case .earlyBird, .nightOwl: return c >= 1 ? "1 / 1" : "0 / 1"
+        case .taster: return "\(c) / \(target) 种"
+        case .coffee: return "\(c.formatted()) / \(target.formatted()) 杯"
+        case .perfectWeek: return c >= 1 ? "1 / 1 周" : "0 / 1 周"
+        case .daysCount: return "\(c) / \(target) 天"
+        case .cupDay: return "\(c) / \(target) 杯"
         }
     }
 
@@ -106,7 +152,15 @@ struct Badge: Identifiable {
         case .volume: return "再喝 \(Self.lit(target - cur)) L"
         case .firstLog: return "记下第一笔水"
         case .overGoalDay: return "单日再冲 \(max(1, target - cur))%"
-        case .friday: return "挑一个周五达标"
+        case .friday: return "再战 \(target - cur) 个周五"
+        case .bigSip: return "单笔喝满 \(target) ml"
+        case .earlyBird: return "早起记一笔"
+        case .nightOwl: return "深夜记一笔"
+        case .taster: return "再解锁 \(target - cur) 种饮品"
+        case .coffee: return "再喝 \((target - cur).formatted()) 杯咖啡"
+        case .perfectWeek: return "一周七天全达标"
+        case .daysCount: return "再陪 \(target - cur) 天"
+        case .cupDay: return "单日再喝 \(target - cur) 杯"
         }
     }
 
@@ -124,42 +178,59 @@ enum Achievements {
         startPoint: .topLeading, endPoint: .bottomTrailing)
 
     static let all: [Badge] = [
-        // 连续达标 今天没达标不算断(现有streak口径自带容错)
-        Badge(id: "streak3", series: .streak, kind: .streak, name: "初来乍到", icon: "drop.fill",
+        // 连续达标 雨势连续轴: 偶阵雨起步 细雨连绵 连雨 如注 风暴不息
+        Badge(id: "streak3", series: .streak, kind: .streak, name: "初来乍到", icon: "cloud.sun.rain.fill",
               condition: "连续达标 3 天", target: 3),
-        Badge(id: "streak7", series: .streak, kind: .streak, name: "一周不落", icon: "water.waves",
+        Badge(id: "streak7", series: .streak, kind: .streak, name: "一周不落", icon: "cloud.drizzle.fill",
               condition: "连续达标 7 天", target: 7),
         Badge(id: "streak14", series: .streak, kind: .streak, name: "半月之约", icon: "cloud.rain.fill",
               condition: "连续达标 14 天", target: 14),
-        Badge(id: "streak30", series: .streak, kind: .streak, name: "三十而立", icon: "hurricane",
+        Badge(id: "streak30", series: .streak, kind: .streak, name: "三十而立", icon: "cloud.heavyrain.fill",
               condition: "连续达标 30 天", target: 30),
-        Badge(id: "streak100", series: .streak, kind: .streak, name: "百川归海", icon: "infinity",
+        Badge(id: "streak100", series: .streak, kind: .streak, name: "源远流长", icon: "hurricane",
               condition: "连续达标 100 天", target: 100),
-        // 累计总量 喝过的每一滴都算数
+        // 累计总量 水量规模轴: 滴→溪波→泛舟→渡轮→海中之物 船的尺寸跟着水量长
         Badge(id: "vol10", series: .volume, kind: .volume, name: "细水长流", icon: "drop",
               condition: "累计喝水 10 L", target: 10_000),
-        Badge(id: "vol50", series: .volume, kind: .volume, name: "潺潺成溪", icon: "shower.fill",
+        Badge(id: "vol50", series: .volume, kind: .volume, name: "潺潺成溪", icon: "water.waves",
               condition: "累计喝水 50 L", target: 50_000),
         Badge(id: "vol100", series: .volume, kind: .volume, name: "汇流成河", icon: "sailboat.fill",
               condition: "累计喝水 100 L", target: 100_000),
-        Badge(id: "vol500", series: .volume, kind: .volume, name: "大江大河", icon: "cloud.heavyrain.fill",
+        Badge(id: "vol500", series: .volume, kind: .volume, name: "大江大河", icon: "ferry.fill",
               condition: "累计喝水 500 L", target: 500_000),
         Badge(id: "vol1000", series: .volume, kind: .volume, name: "汪洋大海", icon: "fish.fill",
               condition: "累计喝水 1000 L", target: 1_000_000),
-        // 累计杯数
-        Badge(id: "cups1", series: .cups, kind: .cups, name: "第一杯", icon: "mug",
-              condition: "记下第一杯水", target: 1),
+        // 累计杯数 去掉与初次见面撞车的"第一杯" 10/100/1000
+        Badge(id: "cups10", series: .cups, kind: .cups, name: "十杯之诺", icon: "mug",
+              condition: "累计记 10 杯", target: 10),
         Badge(id: "cups100", series: .cups, kind: .cups, name: "百杯不怠", icon: "mug.fill",
               condition: "累计记 100 杯", target: 100),
-        Badge(id: "cups1000", series: .cups, kind: .cups, name: "千杯不倦", icon: "star.circle.fill",
+        Badge(id: "cups1000", series: .cups, kind: .cups, name: "千杯不倦", icon: "crown.fill",
               condition: "累计记 1000 杯", target: 1_000),
-        // 高光时刻 单日与彩蛋
+        // 生活节奏 作息与口味彩蛋
+        Badge(id: "dawn", series: .rhythm, kind: .earlyBird, name: "清晨第一滴", icon: "sun.horizon.fill",
+              condition: "在早上 7 点前记过一笔", target: 1),
+        Badge(id: "owl", series: .rhythm, kind: .nightOwl, name: "夜猫子补给", icon: "moon.stars.fill",
+              condition: "在 23 点后记过一笔", target: 1),
+        Badge(id: "taster", series: .rhythm, kind: .taster, name: "品鉴师", icon: "paintpalette.fill",
+              condition: "集齐 5 种饮品记录", target: 5),
+        Badge(id: "coffee", series: .rhythm, kind: .coffee, name: "咖啡因账户", icon: "cup.and.saucer.fill",
+              condition: "咖啡累计 10 杯", target: 10),
+        Badge(id: "oldfriend", series: .rhythm, kind: .daysCount, name: "老朋友", icon: "heart.fill",
+              condition: "累计 30 天有记录", target: 30),
+        // 高光时刻 单次单日与彩蛋
         Badge(id: "first", series: .special, kind: .firstLog, name: "初次见面", icon: "hand.wave.fill",
               condition: "记下第一笔水", target: 1),
-        Badge(id: "over150", series: .special, kind: .overGoalDay, name: "超额兑现", icon: "bolt.fill",
+        Badge(id: "whale", series: .special, kind: .bigSip, name: "鲸饮", icon: "cloud.bolt.rain.fill",
+              condition: "单笔喝下 500 ml", target: 500),
+        Badge(id: "buffalo", series: .special, kind: .cupDay, name: "大水牛", icon: "10.circle.fill",
+              condition: "单日喝满 10 杯", target: 10),
+        Badge(id: "over150", series: .special, kind: .overGoalDay, name: "马力全开", icon: "bolt.fill",
               condition: "单日喝到当日目标的 150%", target: 150),
-        Badge(id: "friday", series: .special, kind: .friday, name: "周五战士", icon: "party.popper.fill",
-              condition: "任意一个周五达标 1 次", target: 1),
+        Badge(id: "friday", series: .special, kind: .friday, name: "周五战士", icon: "flag.checkered",
+              condition: "在 3 个周五达标", target: 3),
+        Badge(id: "perfectweek", series: .special, kind: .perfectWeek, name: "满勤周", icon: "calendar.badge.checkmark",
+              condition: "一个自然周 7 天全达标", target: 1),
     ]
 
     // 已解锁id集合 评估与建档共用

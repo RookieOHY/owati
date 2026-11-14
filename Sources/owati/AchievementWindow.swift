@@ -39,16 +39,23 @@ struct AchievementView: View {
     var body: some View {
         let _ = state.drinkPulse   // 观察驱动 记一笔/删一笔都重算
         let earnedCount = Achievements.all.filter { $0.earned(db: db) }.count
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 12) {
-                header(earnedCount)
-                ForEach(BadgeSeries.allCases, id: \.self) { s in
-                    seriesSection(s)
+        VStack(spacing: 12) {
+            // 馆牌与讲解屏钉在窗顶 滚到底也看得见
+            header(earnedCount)
+                .padding(.top, 16)
+                .padding(.horizontal, 16)
+            infoStrip
+                .padding(.horizontal, 16)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(BadgeSeries.allCases, id: \.self) { s in
+                        seriesSection(s)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 2)
+                .padding(.bottom, 8)
             }
-            .padding(16)
-            // 底部留白 给最后一排的悬停tooltip
-            .padding(.bottom, 44)
         }
         .frame(width: 640)
         .overlay {
@@ -64,21 +71,67 @@ struct AchievementView: View {
     // MARK: 馆牌 总览+勾引式提示
 
     func header(_ earned: Int) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 8) {
-                Image(systemName: "trophy.fill")
-                    .font(.system(size: 17))
-                    .foregroundStyle(Achievements.medalGradient)
-                Text("已收藏 \(earned) / \(Achievements.all.count)")
-                    .font(.system(size: 17, weight: .bold))
-                Spacer()
-            }
-            if let hint = nextHint {
-                Text(hint)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+        HStack(spacing: 8) {
+            Spacer()
+            Image(systemName: "trophy.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(Achievements.medalGradient)
+            // hero式 已得大而蓝 总数小而灰
+            (Text("已收藏 ")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.secondary)
+            + Text("\(earned)")
+                .font(.system(size: 26, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(.owAccent)
+            + Text(" / \(Achievements.all.count)")
+                .font(.system(size: 13, weight: .semibold))
+                .monospacedDigit()
+                .foregroundColor(.secondary))
+            Spacer()
+        }
+    }
+
+    // 讲解屏 悬停展位=该藏品的条件与进度 空闲=最接近解锁的勾引提示
+    // 信息固定在这条 不跟随展位浮卡 免得盖住展区标题
+    var infoStrip: some View {
+        let hovered = state.achvHoverId.flatMap { id in Achievements.all.first { $0.id == id } }
+        return Group {
+            if let b = hovered {
+                let cur = b.currentValue(db: db)
+                let got = cur >= b.target
+                HStack(spacing: 6) {
+                    Image(systemName: b.icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.owAccent)
+                        // 定框 防sailboat/fish这类高个子符号把讲解屏撑高
+                        .frame(width: 16, height: 16)
+                    Text(b.name)
+                        .fontWeight(.semibold)
+                    Text(b.condition)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(got ? "已收藏 ✓" : b.progressText(cur))
+                        .monospacedDigit()
+                        .fontWeight(got ? .semibold : .regular)
+                        .foregroundColor(got ? .owAccent : .secondary)
+                }
+            } else if let hint = nextHint {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10))
+                        .foregroundColor(.owAccent)
+                    Text(hint)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
             }
         }
+        .font(.system(size: 11))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
     }
 
     // 最接近解锁的徽章 华为式进度外露 在头部勾一下
@@ -102,24 +155,28 @@ struct AchievementView: View {
         let badges = Achievements.all.filter { $0.series == s }
         let got = badges.filter { $0.earned(db: db) }.count
         return VStack(alignment: .leading, spacing: 8) {
-            // 展区铭牌 卡片小灰标题同款 缩进10
+            // 展区铭牌 比卡片小灰标题大一号 13pt
             HStack(spacing: 6) {
                 Image(systemName: s.icon)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.owAccent)
                 Text(s.title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.secondary)
                 Spacer()
-                Text("\(got) / \(badges.count)")
-                    .font(.system(size: 10))
+                // hero式 已得大而蓝 总数小而灰 与馆牌同语言
+                (Text("\(got)")
+                    .font(.system(size: 15, weight: .bold))
                     .monospacedDigit()
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.owAccent)
+                + Text(" / \(badges.count)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundColor(.secondary))
             }
             .padding(.leading, 10)
-            // 展柜卡
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 6),
-                      spacing: 8) {
+            // 展柜卡 一行通栏 每区一行 等分宽度整行填满自然居中
+            HStack(spacing: 8) {
                 ForEach(Array(badges.enumerated()), id: \.element.id) { i, b in
                     showcaseCell(b, idx: i)
                 }
@@ -154,17 +211,18 @@ struct AchievementView: View {
                 if got {
                     floatingMedal(b, size: 46, phase: Double(idx) * 0.9)
                 } else {
-                    medallion(b, got: false, size: 44)
+                    medallion(b, got: false, size: 44,
+                              progress: Double(cur) / Double(max(1, b.target)))
                         .overlay {
                             ZStack {
                                 curtain(false)
-                                    .offset(x: hovered ? -26 : 0)
-                                    .opacity(hovered ? 0.05 : 1)
+                                    .offset(x: hovered ? -34 : 0)
+                                    .opacity(hovered ? 0 : 1)
                                 curtain(true)
-                                    .offset(x: hovered ? 26 : 0)
-                                    .opacity(hovered ? 0.05 : 1)
+                                    .offset(x: hovered ? 34 : 0)
+                                    .opacity(hovered ? 0 : 1)
                             }
-                            .frame(width: 54, height: 56)
+                            .frame(width: 64, height: 66)
                         }
                         .frame(height: 46)
                 }
@@ -179,10 +237,10 @@ struct AchievementView: View {
                     .frame(width: 32, height: 5)
                     .blur(radius: 2)
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.primary.opacity(got ? 0.16 : 0.07))
+                    .fill(Color.primary.opacity(got ? 0.16 : 0.10))
                     .frame(width: 42, height: 7)
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.primary.opacity(got ? 0.09 : 0.04))
+                    .fill(Color.primary.opacity(got ? 0.09 : 0.06))
                     .frame(width: 54, height: 5)
             }
             Text(b.name)
@@ -200,11 +258,6 @@ struct AchievementView: View {
         .onTapGesture {
             withAnimation(.easeOut(duration: 0.2)) { state.achvDetailId = b.id }
         }
-        .overlay(alignment: .bottom) {
-            if hovered {
-                hoverTip(b, cur: cur, got: got)
-            }
-        }
         .zIndex(hovered ? 3 : 1)
     }
 
@@ -212,7 +265,7 @@ struct AchievementView: View {
     func floatingMedal(_ b: Badge, size: CGFloat, phase: Double) -> some View {
         TimelineView(.animation(minimumInterval: 1.0 / 15)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate / 4.0 * 2 * .pi
-            medallion(b, got: true, size: size)
+            medallion(b, got: true, size: size, progress: 1)
                 .offset(y: 1.5 * sin(t + phase))
         }
     }
@@ -239,46 +292,45 @@ struct AchievementView: View {
     }
 
     // 奖章 统一圆底模板+主题图形 解锁=蓝渐变 锁定=灰剪影
-    func medallion(_ b: Badge, got: Bool, size: CGFloat) -> some View {
+    // 外圈进度环 锁定显示达成率蓝弧 满环=已收藏 progress传nil则不画环
+    func medallion(_ b: Badge, got: Bool, size: CGFloat, progress: Double? = nil) -> some View {
         ZStack {
             Circle()
                 .fill(got ? AnyShapeStyle(Achievements.medalGradient)
-                          : AnyShapeStyle(Color.primary.opacity(0.07)))
+                          : AnyShapeStyle(Color.primary.opacity(0.10)))
                 .frame(width: size, height: size)
             // 内圈细描边 提奖章质感
             Circle()
-                .strokeBorder(got ? Color.white.opacity(0.35) : Color.primary.opacity(0.06),
+                .strokeBorder(got ? Color.white.opacity(0.35) : Color.primary.opacity(0.10),
                               lineWidth: 1)
                 .frame(width: size - 6, height: size - 6)
             Image(systemName: b.icon)
                 .font(.system(size: size * 0.4, weight: .medium))
-                .foregroundColor(got ? .white : .primary.opacity(0.3))
+                .foregroundColor(got ? .white : .primary.opacity(0.35))
+        }
+        .overlay {
+            if let p = progress {
+                let clamped = max(0, min(1, p))
+                // 轨道 锁定才显 已收藏满环自身就是轨道
+                if !got {
+                    Circle()
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 2.5)
+                        .frame(width: size + 12, height: size + 12)
+                }
+                // 进度弧 从顶部中央顺时针
+                Circle()
+                    .trim(from: 0, to: clamped)
+                    .stroke(got ? AnyShapeStyle(Achievements.medalGradient)
+                                : AnyShapeStyle(Color.owAccent),
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: size + 12, height: size + 12)
+                    .animation(.easeOut(duration: 0.4), value: clamped)
+            }
         }
     }
 
-    // 讲解牌 条件+数字进度 浮在展位下方
-    func hoverTip(_ b: Badge, cur: Int, got: Bool) -> some View {
-        VStack(spacing: 2) {
-            Text(b.name)
-                .fontWeight(.medium)
-            Text(b.condition)
-                .foregroundColor(.secondary)
-            Text(got ? "已收藏 ✓" : b.progressText(cur))
-                .fontWeight(got ? .semibold : .regular)
-                .foregroundColor(got ? .owAccent : .secondary)
-        }
-        .font(.system(size: 10))
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.primary.opacity(0.1)))
-        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-        .fixedSize()
-        .offset(y: 58)
-        .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottom)))
-        .zIndex(4)
-    }
-
+    // 讲解牌已改为顶部讲解屏 展位上不再浮卡
     // MARK: 藏品铭牌详情 非全屏浮层 点空白关闭
 
     func detailCard(_ b: Badge) -> some View {
@@ -292,7 +344,8 @@ struct AchievementView: View {
                     withAnimation(.easeIn(duration: 0.15)) { state.achvDetailId = nil }
                 }
             VStack(spacing: 12) {
-                medallion(b, got: got, size: 68)
+                medallion(b, got: got, size: 68,
+                          progress: got ? 1 : Double(cur) / Double(max(1, b.target)))
                 VStack(spacing: 4) {
                     Text(b.name)
                         .font(.system(size: 15, weight: .bold))
@@ -301,14 +354,6 @@ struct AchievementView: View {
                         .foregroundColor(.secondary)
                 }
                 VStack(spacing: 6) {
-                    GeometryReader { g in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.primary.opacity(0.1))
-                            Capsule().fill(Color.owAccent)
-                                .frame(width: g.size.width * (got ? 1 : min(1, Double(cur) / Double(b.target))))
-                        }
-                    }
-                    .frame(height: 6)
                     Text(got ? "已收藏" : (b.hint(cur) ?? ""))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(got ? .owAccent : .secondary)
