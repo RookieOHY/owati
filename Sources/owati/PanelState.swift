@@ -35,6 +35,8 @@ final class PanelState: ObservableObject {
     @Published var editingId: Int64? = nil    // 正在改ml的记录id
     @Published var editingText = ""           // 编辑框当前内容
     var editingOldML = 0                      // 进编辑前的量 算撤销用
+    private var undoExpires: Date? = nil      // 撤销过期时刻 悬停暂停用
+    private var undoHover = false             // 悬停撤销条中 计时暂停
     @Published var undo: UndoAction? = nil    // 最近一次可撤销操作
     @Published var undoText = ""
     @Published var undoWiggle: Double = 0        // 撤销条出现时的轻摆角度
@@ -193,24 +195,43 @@ final class PanelState: ObservableObject {
         wasGoalReached = reached
     }
 
-    // 记一笔可撤销操作 6秒没撤销就过期
+    // 记一笔可撤销操作 6秒没撤销就过期 悬停撤销条时暂停计时
     func setUndo(_ a: UndoAction, text: String) {
         undo = a
         undoText = text
         // 出现瞬间从-5°弹回 低阻尼spring自带两次轻摆
         undoWiggle = -5
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.undoWiggle = 0 }
+        undoExpires = Date().addingTimeInterval(6)
+        scheduleUndoExpiry()
+    }
+
+    // 重排过期计时(新记录/悬停结束时) token防旧计时器误清
+    private func scheduleUndoExpiry() {
         undoToken += 1
         let token = undoToken
         undoWork?.cancel()
+        guard let exp = undoExpires, !undoHover else { return }   // 悬停中=暂停 不排
         let w = DispatchWorkItem { [weak self] in
-            if self?.undoToken == token {
-                self?.undo = nil
-                self?.undoText = ""
-            }
+            guard let self, self.undoToken == token else { return }
+            self.undo = nil
+            self.undoText = ""
+            self.undoExpires = nil
         }
         undoWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: w)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.2, exp.timeIntervalSinceNow), execute: w)
+    }
+
+    // 悬停撤销条 暂停过期计时 移开恢复
+    func setUndoHover(_ h: Bool) {
+        guard undoHover != h else { return }
+        undoHover = h
+        if h {
+            undoWork?.cancel()
+            undoWork = nil
+        } else {
+            scheduleUndoExpiry()
+        }
     }
 
     // 清掉撤销(撤销成功或新操作顶掉时)
@@ -218,6 +239,7 @@ final class PanelState: ObservableObject {
         undoWork?.cancel()
         undo = nil
         undoText = ""
+        undoExpires = nil
     }
 
     // MARK: 徽章评估
@@ -496,11 +518,16 @@ final class PanelState: ObservableObject {
             scheduleNext(from: now)
             return
         }
-        // 离开期间跳过的 人回来了补一次
+        // 离开期间跳过的 人回来了补一次 但必须过闸门 提醒日/窗口/勿扰说了算
         if afkCatchup && idle < afkThreshold && !remindCardVisible && !fullScreenVisible {
             afkCatchup = false
             scheduleNext(from: now)
-            showReminder(text: "回来啦 先喝杯水")
+            if remindAllowed(now) {
+                showReminder(text: "回来啦 先喝杯水")
+            } else {
+                // 周日/窗口外/勿扰 → 顺延到下一个合法时刻(如周一09:00)
+                nextRemind = nextAllowedTime(now)
+            }
             return
         }
         guard now >= nextRemind, !remindCardVisible, !fullScreenVisible else { return }
@@ -568,6 +595,36 @@ final class PanelState: ObservableObject {
         let app = NSWorkspace.shared.frontmostApplication
         let s = ((app?.bundleIdentifier ?? "") + " " + (app?.localizedName ?? "")).lowercased()
         return meetingKeywords.contains { s.contains($0) }
+    }
+
+    // 闸门不过时 下次提醒钉到下一个合法时刻: 勿扰结束/当天窗口开始/下一个提醒日的窗口开始
+    private func nextAllowedTime(_ now: Date) -> Date {
+        let c = AppConfig.shared
+        let cal = Calendar.current
+        func mins(_ s: String) -> Int {
+            let p = s.split(separator: ":").compactMap { Int($0) }
+            return p.count == 2 ? p[0] * 60 + p[1] : 0
+        }
+        let start = mins(c.remindStart), end = mins(c.remindEnd)
+        var day = cal.startOfDay(for: now)
+        for _ in 0..<8 {   // 最多扫8天 提醒日不可能全没勾
+            if c.remindDays.contains(cal.component(.weekday, from: day)) {
+                let winStart = day.addingTimeInterval(TimeInterval(start * 60))
+                let winEnd = day.addingTimeInterval(TimeInterval(end * 60))
+                if now < winStart { return winStart }          // 当天窗口还没开
+                if now < winEnd {
+                    // 在窗口内被勿扰挡住 → 勿扰结束再说话
+                    if c.restEnabled {
+                        let rs = day.addingTimeInterval(TimeInterval(mins(c.restStart) * 60))
+                        let re = day.addingTimeInterval(TimeInterval(mins(c.restEnd) * 60))
+                        if now >= rs && now < re { return re }
+                    }
+                    return now.addingTimeInterval(120)         // 窗口内其它静默 2分钟后再看
+                }
+            }
+            day = cal.date(byAdding: .day, value: 1, to: day)!
+        }
+        return now.addingTimeInterval(600)
     }
 
     // 用户键鼠空闲秒数 无需任何权限

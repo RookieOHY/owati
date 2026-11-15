@@ -188,6 +188,8 @@ extension PanelView {
         // 出现时从-5°spring回正 低阻尼自带两次小摆
         .rotationEffect(.degrees(state.undoWiggle))
         .animation(.spring(duration: 0.35, bounce: 0.4), value: state.undoWiggle)
+        // 悬停暂停过期计时 打字回来再处理也不丢
+        .onHover { state.setUndoHover($0) }
     }
 
     // 执行撤销

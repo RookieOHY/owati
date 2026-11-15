@@ -277,7 +277,7 @@ struct SettingsView: View {
                         }
                     }
                     Divider()
-                    settingsRow("alarm.clock", .teal, "稍后时长") {
+                    settingsRow("timer", .teal, "稍后时长") {
                         popup(["5 分钟", "10 分钟", "15 分钟"], [5, 10, 15].firstIndex(of: cfg.snoozeMin) ?? 1) {
                             cfg.snoozeMin = [5, 10, 15][$0]
                         }
