@@ -81,6 +81,14 @@ final class AppConfig: ObservableObject {
     @Published var nudgeSkips: Int {
         didSet { ud.set(nudgeSkips, forKey: "nudgeSkips") }
     }
+    // 徽章获得日 贴纸编号/日期用
+    @Published var badgeDates: [String: String] {
+        didSet { ud.set(badgeDates, forKey: "badgeDates") }
+    }
+    // 贴纸摆放位置 "x,y"（贴纸墙画布内点坐标）
+    @Published var stickerPos: [String: String] {
+        didSet { ud.set(stickerPos, forKey: "stickerPos") }
+    }
     // 稍后时长 分钟
     @Published var snoozeMin: Int {
         didSet { ud.set(snoozeMin, forKey: "snoozeMin") }
@@ -96,6 +104,18 @@ final class AppConfig: ObservableObject {
     // 超额静音阈值 0关闭 150/200=超额百分比后彻底安静
     @Published var overGoalSilence: Int {
         didSet { ud.set(overGoalSilence, forKey: "overGoalSilence") }
+    }
+    // 贴纸墙上隐藏(收起)的贴纸 剩下的才陈列
+    @Published var stickerHidden: [String] {
+        didSet { ud.set(stickerHidden, forKey: "stickerHidden") }
+    }
+    // 陈列室未解锁徽章的揭幕窗帘
+    @Published var achvCurtain: Bool {
+        didSet { ud.set(achvCurtain, forKey: "achvCurtain") }
+    }
+    // 贴纸墙画板样式 0点阵纸 1软木板 2冰箱门 3水纹
+    @Published var wallStyle: Int {
+        didSet { ud.set(wallStyle, forKey: "wallStyle") }
     }
     // 菜单栏图标外画喝水进度环
     @Published var menuRing: Bool {
@@ -149,11 +169,16 @@ final class AppConfig: ObservableObject {
         reminderStyle = d.object(forKey: "reminderStyle") as? Int ?? 0
         remindSound = d.string(forKey: "remindSound") ?? ""
         nudgeSkips = d.object(forKey: "nudgeSkips") as? Int ?? 2
+        badgeDates = (d.object(forKey: "badgeDates") as? [String: String]) ?? [:]
+        stickerPos = (d.object(forKey: "stickerPos") as? [String: String]) ?? [:]
         snoozeMin = d.object(forKey: "snoozeMin") as? Int ?? 10
         goalIntervalMult = d.object(forKey: "goalIntervalMult") as? Int ?? 2
         overGoalSilence = d.object(forKey: "overGoalSilence") as? Int ?? 150
+        achvCurtain = d.object(forKey: "achvCurtain") as? Bool ?? false
+        wallStyle = d.object(forKey: "wallStyle") as? Int ?? 0
         menuRing = d.object(forKey: "menuRing") as? Bool ?? true
         menuCountdown = d.object(forKey: "menuCountdown") as? Bool ?? true
+        stickerHidden = (d.object(forKey: "stickerHidden") as? [String]) ?? []
         meetingPause = d.object(forKey: "meetingPause") as? Bool ?? true
         achvSeen = Set(d.stringArray(forKey: "achvSeen") ?? [])
         launchAtLogin = d.object(forKey: "launchAtLogin") as? Bool ?? false
@@ -190,6 +215,10 @@ final class AppConfig: ObservableObject {
             "bottleML": bottleML,
             "menuRing": menuRing,
             "menuCountdown": menuCountdown,
+            "badgeDates": badgeDates,
+            "stickerPos": stickerPos,
+            "stickerHidden": stickerHidden,
+            "wallStyle": wallStyle,
         ]
     }
 
@@ -215,5 +244,9 @@ final class AppConfig: ObservableObject {
         if let v = d["bottleML"] as? Int { bottleML = v }
         if let v = d["menuRing"] as? Bool { menuRing = v }
         if let v = d["menuCountdown"] as? Bool { menuCountdown = v }
+        if let v = d["badgeDates"] as? [String: String] { badgeDates = v }
+        if let v = d["stickerPos"] as? [String: String] { stickerPos = v }
+        if let v = d["stickerHidden"] as? [String] { stickerHidden = v }
+        if let v = d["wallStyle"] as? Int { wallStyle = v }
     }
 }

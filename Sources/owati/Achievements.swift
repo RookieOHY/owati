@@ -77,6 +77,83 @@ struct Badge: Identifiable {
 
     // 对外展示口径 未解锁的秘藏一律马赛克
     func displayIcon(got: Bool) -> String { hidden && !got ? "questionmark" : icon }
+
+    // 贴纸emoji素材 一徽章一图案 多彩多样
+    var stickerEmoji: String {
+        switch id {
+        case "streak3": return "🌦"
+        case "streak7": return "☔"
+        case "streak14": return "🌧"
+        case "streak30": return "⛈"
+        case "streak100": return "🌪"
+        case "vol10": return "💧"
+        case "vol50": return "🌊"
+        case "vol100": return "⛵"
+        case "vol500": return "🚢"
+        case "vol1000": return "🐋"
+        case "cups10": return "🥤"
+        case "cups100": return "🍺"
+        case "cups1000": return "👑"
+        case "dawn": return "🌅"
+        case "owl": return "🌙"
+        case "taster": return "🎨"
+        case "coffee": return "☕"
+        case "oldfriend": return "❤️"
+        case "first": return "👋"
+        case "whale": return "🐳"
+        case "buffalo": return "🐄"
+        case "over150": return "⚡"
+        case "friday": return "🏁"
+        case "perfectweek": return "📅"
+        case "monthly": return "🚩"
+        case "midnight": return "🕛"
+        case "tank": return "🛢"
+        case "collector": return "🎖"
+        // 新增40枚贴纸emoji
+        case "streak2": return "🌤"
+        case "streak5": return "☁️"
+        case "streak10": return "🌥"
+        case "streak20": return "🌬"
+        case "streak21": return "❄️"
+        case "streak40": return "🌨"
+        case "streak50": return "🌫"
+        case "streak60": return "💨"
+        case "streak80": return "🌈"
+        case "streak90": return "🌞"
+        case "vol2000": return "🫗"
+        case "vol5000": return "🚰"
+        case "vol20000": return "🪣"
+        case "vol30000": return "🍶"
+        case "vol75000": return "🫙"
+        case "vol200000": return "🛁"
+        case "vol300000": return "🏊"
+        case "vol750000": return "🚿"
+        case "vol1500000": return "🦈"
+        case "vol3000000": return "🐙"
+        case "cups25": return "🧋"
+        case "cups50": return "🍵"
+        case "cups200": return "🍹"
+        case "cups500": return "🍾"
+        case "cups750": return "🍸"
+        case "dawn3": return "🌄"
+        case "dawn10": return "🌞"
+        case "night3": return "🌙"
+        case "taster8": return "🖌"
+        case "coffee30": return "🥐"
+        case "coffee50": return "🫖"
+        case "days3": return "🌱"
+        case "days7": return "🚶"
+        case "days14": return "🌳"
+        case "days60": return "🏡"
+        case "days100": return "🏔"
+        case "days200": return "🗺"
+        case "bigSip1000": return "🫗"
+        case "cupDay15": return "🧊"
+        case "friday5": return "🎯"
+        case "friday10": return "🏅"
+        default: return "💧"
+        }
+    }
     func displayName(got: Bool) -> String { hidden && !got ? "？？？" : name }
     func displayCondition(got: Bool) -> String { hidden && !got ? "达成后揭晓" : condition }
 
@@ -230,6 +307,26 @@ enum Achievements {
               condition: "连续达标 30 天", target: 30),
         Badge(id: "streak100", series: .streak, kind: .streak, name: "源远流长", icon: "hurricane",
               condition: "连续达标 100 天", target: 100),
+        Badge(id: "streak2", series: .streak, kind: .streak, name: "小试身手", icon: "cloud.fill",
+              condition: "连续达标 2 天", target: 2),
+        Badge(id: "streak5", series: .streak, kind: .streak, name: "五日之约", icon: "cloud.fog.fill",
+              condition: "连续达标 5 天", target: 5),
+        Badge(id: "streak10", series: .streak, kind: .streak, name: "十日连珠", icon: "cloud.sleet.fill",
+              condition: "连续达标 10 天", target: 10),
+        Badge(id: "streak20", series: .streak, kind: .streak, name: "廿日不息", icon: "cloud.hail.fill",
+              condition: "连续达标 20 天", target: 20),
+        Badge(id: "streak21", series: .streak, kind: .streak, name: "习惯初成", icon: "cloud.snow.fill",
+              condition: "连续达标 21 天", target: 21),
+        Badge(id: "streak40", series: .streak, kind: .streak, name: "四十不惑", icon: "snowflake",
+              condition: "连续达标 40 天", target: 40),
+        Badge(id: "streak50", series: .streak, kind: .streak, name: "五十连绵", icon: "cloud.fog",
+              condition: "连续达标 50 天", target: 50),
+        Badge(id: "streak60", series: .streak, kind: .streak, name: "两月连绵", icon: "wind",
+              condition: "连续达标 60 天", target: 60),
+        Badge(id: "streak80", series: .streak, kind: .streak, name: "长跑渐入", icon: "cloud.rainbow.half",
+              condition: "连续达标 80 天", target: 80),
+        Badge(id: "streak90", series: .streak, kind: .streak, name: "九旬不断", icon: "sun.max.fill",
+              condition: "连续达标 90 天", target: 90),
         // 累计总量 水量规模轴: 滴→溪波→泛舟→渡轮→海中之物 船的尺寸跟着水量长
         Badge(id: "vol10", series: .volume, kind: .volume, name: "细水长流", icon: "drop",
               condition: "累计喝水 10 L", target: 10_000),
@@ -241,6 +338,26 @@ enum Achievements {
               condition: "累计喝水 500 L", target: 500_000),
         Badge(id: "vol1000", series: .volume, kind: .volume, name: "汪洋大海", icon: "fish.fill",
               condition: "累计喝水 1000 L", target: 1_000_000),
+        Badge(id: "vol2000", series: .volume, kind: .volume, name: "两升起步", icon: "drop.circle",
+              condition: "累计喝水 2 L", target: 2_000),
+        Badge(id: "vol5000", series: .volume, kind: .volume, name: "五升清泉", icon: "drop.circle.fill",
+              condition: "累计喝水 5 L", target: 5_000),
+        Badge(id: "vol20000", series: .volume, kind: .volume, name: "桶装满员", icon: "shippingbox.fill",
+              condition: "累计喝水 20 L", target: 20_000),
+        Badge(id: "vol30000", series: .volume, kind: .volume, name: "三十而饮", icon: "fork.knife",
+              condition: "累计喝水 30 L", target: 30_000),
+        Badge(id: "vol75000", series: .volume, kind: .volume, name: "七五之储", icon: "archivebox.fill",
+              condition: "累计喝水 75 L", target: 75_000),
+        Badge(id: "vol200000", series: .volume, kind: .volume, name: "两百升库", icon: "bathtub.fill",
+              condition: "累计喝水 200 L", target: 200_000),
+        Badge(id: "vol300000", series: .volume, kind: .volume, name: "三百升池", icon: "figure.pool.swim",
+              condition: "累计喝水 300 L", target: 300_000),
+        Badge(id: "vol750000", series: .volume, kind: .volume, name: "七百五十升", icon: "shower.fill",
+              condition: "累计喝水 750 L", target: 750_000),
+        Badge(id: "vol1500000", series: .volume, kind: .volume, name: "千五升海", icon: "fish.fill",
+              condition: "累计喝水 1500 L", target: 1_500_000),
+        Badge(id: "vol3000000", series: .volume, kind: .volume, name: "三千升洋", icon: "tortoise.fill",
+              condition: "累计喝水 3000 L", target: 3_000_000),
         // 累计杯数 去掉与初次见面撞车的"第一杯" 10/100/1000
         Badge(id: "cups10", series: .cups, kind: .cups, name: "十杯之诺", icon: "mug",
               condition: "累计记 10 杯", target: 10),
@@ -248,28 +365,70 @@ enum Achievements {
               condition: "累计记 100 杯", target: 100),
         Badge(id: "cups1000", series: .cups, kind: .cups, name: "千杯不倦", icon: "crown.fill",
               condition: "累计记 1000 杯", target: 1_000),
+        Badge(id: "cups25", series: .cups, kind: .cups, name: "廿五杯", icon: "cup.and.saucer",
+              condition: "累计记 25 杯", target: 25),
+        Badge(id: "cups50", series: .cups, kind: .cups, name: "半百杯", icon: "cup.and.saucer.fill",
+              condition: "累计记 50 杯", target: 50),
+        Badge(id: "cups200", series: .cups, kind: .cups, name: "两百杯", icon: "mug.fill",
+              condition: "累计记 200 杯", target: 200),
+        Badge(id: "cups500", series: .cups, kind: .cups, name: "五百杯", icon: "cup.and.saucer",
+              condition: "累计记 500 杯", target: 500),
+        Badge(id: "cups750", series: .cups, kind: .cups, name: "七百五十杯", icon: "mug",
+              condition: "累计记 750 杯", target: 750),
         // 生活节奏 作息与口味彩蛋
         Badge(id: "dawn", series: .rhythm, kind: .earlyBird, name: "清晨第一滴", icon: "sun.horizon.fill",
               condition: "在早上 7 点前记过一笔", target: 1),
+        Badge(id: "dawn3", series: .rhythm, kind: .earlyBird, name: "晨型选手", icon: "sunrise.fill",
+              condition: "3 个清晨 7 点前记录", target: 3),
+        Badge(id: "dawn10", series: .rhythm, kind: .earlyBird, name: "晨型大师", icon: "sun.and.horizon.fill",
+              condition: "10 个清晨 7 点前记录", target: 10),
         Badge(id: "owl", series: .rhythm, kind: .nightOwl, name: "夜猫子补给", icon: "moon.stars.fill",
               condition: "在 23 点后记过一笔", target: 1),
+        Badge(id: "night3", series: .rhythm, kind: .nightOwl, name: "深夜补给站", icon: "moon.circle.fill",
+              condition: "3 个深夜 23 点后记录", target: 3),
         Badge(id: "taster", series: .rhythm, kind: .taster, name: "品鉴师", icon: "paintpalette.fill",
               condition: "集齐 5 种饮品记录", target: 5),
+        Badge(id: "taster8", series: .rhythm, kind: .taster, name: "全类鉴赏家", icon: "paintbrush.fill",
+              condition: "集齐 8 种饮品记录", target: 8),
         Badge(id: "coffee", series: .rhythm, kind: .coffee, name: "咖啡因账户", icon: "cup.and.saucer.fill",
               condition: "咖啡累计 10 杯", target: 10),
+        Badge(id: "coffee30", series: .rhythm, kind: .coffee, name: "咖啡续命", icon: "flame.fill",
+              condition: "咖啡累计 30 杯", target: 30),
+        Badge(id: "coffee50", series: .rhythm, kind: .coffee, name: "咖啡自由", icon: "cup.and.saucer",
+              condition: "咖啡累计 50 杯", target: 50),
         Badge(id: "oldfriend", series: .rhythm, kind: .daysCount, name: "老朋友", icon: "heart.fill",
               condition: "累计 30 天有记录", target: 30),
+        Badge(id: "days3", series: .rhythm, kind: .daysCount, name: "三日相伴", icon: "leaf.fill",
+              condition: "累计 3 天有记录", target: 3),
+        Badge(id: "days7", series: .rhythm, kind: .daysCount, name: "一周同行", icon: "figure.walk",
+              condition: "累计 7 天有记录", target: 7),
+        Badge(id: "days14", series: .rhythm, kind: .daysCount, name: "两周相伴", icon: "tree.fill",
+              condition: "累计 14 天有记录", target: 14),
+        Badge(id: "days60", series: .rhythm, kind: .daysCount, name: "六十日久", icon: "house.fill",
+              condition: "累计 60 天有记录", target: 60),
+        Badge(id: "days100", series: .rhythm, kind: .daysCount, name: "百日之交", icon: "mountain.2.fill",
+              condition: "累计 100 天有记录", target: 100),
+        Badge(id: "days200", series: .rhythm, kind: .daysCount, name: "两百日盟", icon: "map.fill",
+              condition: "累计 200 天有记录", target: 200),
         // 高光时刻 单次单日与彩蛋
         Badge(id: "first", series: .special, kind: .firstLog, name: "初次见面", icon: "hand.wave.fill",
               condition: "记下第一笔水", target: 1),
         Badge(id: "whale", series: .special, kind: .bigSip, name: "鲸饮", icon: "cloud.bolt.rain.fill",
               condition: "单笔喝下 500 ml", target: 500),
+        Badge(id: "bigSip1000", series: .special, kind: .bigSip, name: "豪饮千毫升", icon: "water.waves.slash",
+              condition: "单笔喝下 1000 ml", target: 1_000),
         Badge(id: "buffalo", series: .special, kind: .cupDay, name: "大水牛", icon: "10.circle.fill",
               condition: "单日喝满 10 杯", target: 10),
+        Badge(id: "cupDay15", series: .special, kind: .cupDay, name: "十五杯之日", icon: "11.circle.fill",
+              condition: "单日喝满 15 杯", target: 15),
         Badge(id: "over150", series: .special, kind: .overGoalDay, name: "马力全开", icon: "bolt.fill",
               condition: "单日喝到当日目标的 150%", target: 150),
         Badge(id: "friday", series: .special, kind: .friday, name: "周五战士", icon: "flag.checkered",
               condition: "在 3 个周五达标", target: 3),
+        Badge(id: "friday5", series: .special, kind: .friday, name: "五周五战", icon: "flag.2.crossed.fill",
+              condition: "在 5 个周五达标", target: 5),
+        Badge(id: "friday10", series: .special, kind: .friday, name: "周五老将", icon: "rosette",
+              condition: "在 10 个周五达标", target: 10),
         Badge(id: "perfectweek", series: .special, kind: .perfectWeek, name: "满勤周", icon: "calendar.badge.checkmark",
               condition: "一个自然周 7 天全达标", target: 1),
         // 限时挑战 每月刷新 当月清零重来

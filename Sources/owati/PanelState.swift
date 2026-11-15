@@ -73,7 +73,12 @@ final class PanelState: ObservableObject {
     @Published var panelHeight: CGFloat = 0   // 内容实测高度 用于同步窗口
     @Published var layoutJumping = false      // 窗口跳变中 装饰层暂停绘制防错位闪现
     @Published var settingsTab = 0        // 设置窗口侧栏 0通用 1关于
+    @Published var achvTab = 0            // 陈列室 0徽章 1贴纸
+    @Published var seriesPage: [String: Int] = [:]   // 各展区的分页页码
     @Published var helpOpen: String? = nil // 设置页问号帮助当前打开的行
+    @Published var stickerDragPos: [String: CGPoint] = [:]   // 贴纸拖拽中的实时位置
+    @Published var stickerLibOpen = false    // 贴纸库面板展开中
+    var stickerGrabs: [String: CGSize] = [:]   // 抓取偏移 首次onChanged定 防逐帧漂移
     @Published var previewing = false      // 预览中 真实提醒的跳过计数/排程不介入
     @Published var dataDone: String? = nil // 数据卡刚完成的项 按钮换绿勾2秒
     @Published var updateStatus = ""       // 关于页检查更新结果文案
@@ -253,9 +258,10 @@ final class PanelState: ObservableObject {
     @Published var newBadgeIds: Set<String> = []   // 本次开窗时未看过的已解锁徽章
     @Published var hasNewBadges = false            // 底栏成就按钮的蓝点
 
-    // 打开陈列室 快照新徽章后全部标记已看 蓝点即消
+    // 打开陈列室 快照新徽章后全部标记已看 蓝点即消 贴纸日期也顺带建档
     func openAchievementRoom() {
         let earned = Achievements.earnedIDs(db: Database.shared)
+        backfillStickerDates(earned)
         newBadgeIds = earned.subtracting(AppConfig.shared.achvSeen)
         AppConfig.shared.achvSeen.formUnion(earned)
         hasNewBadges = false
@@ -274,16 +280,30 @@ final class PanelState: ObservableObject {
         guard let known = knownBadges else {
             knownBadges = earned
             syncNewBadges(earned)
+            backfillStickerDates(earned)
             return
         }
         guard !earned.isSubset(of: known) else { return }
         let fresh = earned.subtracting(known)
         knownBadges = earned
         syncNewBadges(earned)
+        backfillStickerDates(earned)
         for b in Achievements.all where fresh.contains(b.id) {
             pendingToasts.append((b.name, b.icon))
         }
         if !badgeToastVisible { popToast() }
+    }
+
+    // 贴纸获得日建档 已有的跳过 没有的记今天(历史徽章回填为建档日)
+    private func backfillStickerDates(_ earned: Set<String>) {
+        let today = Database.dayFormat.string(from: Date())
+        var dates = AppConfig.shared.badgeDates
+        var changed = false
+        for id in earned where dates[id] == nil {
+            dates[id] = today
+            changed = true
+        }
+        if changed { AppConfig.shared.badgeDates = dates }
     }
 
     private func syncNewBadges(_ earned: Set<String>) {

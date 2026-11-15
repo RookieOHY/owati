@@ -342,6 +342,11 @@ struct SettingsView: View {
                         switchToggle($cfg.menuCountdown)
                     }
                     Divider()
+                    settingsRow("theatermasks", .purple, "揭幕窗帘",
+                        help: "陈列室里未解锁徽章的剧院幕布效果。开启后悬停徽章会拉开窗帘揭晓进度；关闭则直接显示进度条。") {
+                        switchToggle($cfg.achvCurtain)
+                    }
+                    Divider()
                     settingsRow("wand.and.stars", .pink, "设置引导") {
                         Button {
                             OwatiApp.showOnboarding()
@@ -522,6 +527,7 @@ struct SettingsView: View {
         cfg.bottleML = 500
         cfg.menuRing = true
         cfg.menuCountdown = true
+        cfg.achvCurtain = false
     }
 
     // 导出记录+目标覆盖+配置 到json
