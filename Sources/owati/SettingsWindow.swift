@@ -658,7 +658,7 @@ struct SettingsView: View {
                 // 检查更新 主蓝胶囊强化CTA
                 VStack(spacing: 6) {
                     Button {
-                        runUpdateCheck()
+                        UpdateChecker.shared.check()
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.triangle.2.circlepath")
@@ -755,24 +755,6 @@ struct SettingsView: View {
         return NSImage(data: rep.representation(using: .png, properties: [:])!) ?? NSImage(size: NSSize(width: pt, height: pt))
     }
 
-    // 查GitHub最新release和当前版本比对 零依赖检查更新
-    private func runUpdateCheck() {
-        state.updateStatus = "检查中…"
-        let cur = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-        guard let url = URL(string: "https://api.github.com/repos/RookieOHY/owati/releases/latest") else { return }
-        var req = URLRequest(url: url)
-        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        Task {
-            var s = "暂时检查不了 稍后再试"
-            if let (data, _) = try? await URLSession.shared.data(for: req),
-               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-               let tag = obj["tag_name"] as? String {
-                s = !cur.isEmpty && tag.contains(cur) ? "已是最新版本 \(tag)" : "发现新版本 \(tag)"
-            }
-            await MainActor.run { state.updateStatus = s }
-        }
-    }
-
     // 当前选中的音效 开关行试听用
     private var selected: Sfx {
         Sfx(rawValue: cfg.soundEffect) ?? .canFizz
@@ -782,4 +764,3 @@ struct SettingsView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "开发版"
     }
 }
-

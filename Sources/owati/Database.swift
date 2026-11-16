@@ -258,7 +258,8 @@ final class Database {
         if m < 60 { return "\(m) 分" }
         let h = m / 60
         if h < 24 { return "\(h) 小时" }
-        return nil
+        // 超过一天正是最该警醒的时刻 显示天数而不是横线
+        return "\(h / 24) 天"
     }
 
     // 一周每天杯数 key=yyyy-MM-dd
