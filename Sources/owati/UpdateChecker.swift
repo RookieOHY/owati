@@ -139,6 +139,7 @@ final class UpdateChecker: ObservableObject {
            let asset = assets.first(where: { ($0["name"] as? String) == dmgName }) {
             size = (asset["size"] as? Int64) ?? Int64(asset["size"] as? Int ?? 0)
         }
+        if size == 0 { return nil } // 资产还没传齐 视同此路不通
         return (tag, notes, size)
     }
 
@@ -172,7 +173,10 @@ final class UpdateChecker: ObservableObject {
         guard !ver.isEmpty else { return }
         let dmgName = "owati-\(ver)-\(machineArch).dmg"
         guard let url = URL(string: "https://github.com/\(updaterRepo)/releases/download/v\(ver)/\(dmgName)") else { return }
-        PanelState.shared.updateStatus = "下载 \(dmgName)"
+        guard totalBytes > 0 else {
+            PanelState.shared.updateStatus = "安装包还没发布好 稍后再试"
+            return
+        }
         isDownloading = true
         downloadDone = false
         downloadProgress = 0
@@ -328,6 +332,11 @@ final class UpdateDownloadDelegate: NSObject, URLSessionDownloadDelegate {
     // 完成回调里当场移走临时文件 回调返回后系统即回收该文件
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
+        // GitHub对不存在的资产回404页 URLSession照样算成功 先验状态码
+        if let http = downloadTask.response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            onError("服务器返回\(http.statusCode) 安装包可能还没传好")
+            return
+        }
         let dest = FileManager.default.temporaryDirectory.appendingPathComponent("owati-update.dmg")
         try? FileManager.default.removeItem(at: dest)
         do {
