@@ -378,7 +378,6 @@ final class PanelState: ObservableObject {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
         let iconW: CGFloat = c.menuRing ? 26 : 22
         let w = iconW + (text != nil ? 6 + ceil((text! as NSString).size(withAttributes: [.font: font]).width) : 0)
-        let img = NSImage(size: NSSize(width: w, height: 22))
         // lockFocus离屏只出1x位图 Retina菜单栏拉伸2倍必糊
         // 显式建2x位图 像素翻倍 坐标仍按点画 亮屏才清晰
         let scale: CGFloat = 2
@@ -418,9 +417,13 @@ final class PanelState: ObservableObject {
                 withAttributes: [.font: font, .foregroundColor: NSColor.black.withAlphaComponent(0.9)])
         }
         NSGraphicsContext.restoreGraphicsState()
-        img.addRepresentation(rep)
-        img.isTemplate = true
-        menuBarImage = img
+        // 直接挂bitmap位图 MenuBarExtra不吃它的模板标记(以前PNG文件加载的能自适应)
+        // 转一道PNG再加载 和文件加载的图标同类 模板渲染恢复正常
+        guard let png = rep.representation(using: .png, properties: [:]),
+              let pngImg = NSImage(data: png) else { return }
+        pngImg.size = NSSize(width: w, height: 22)
+        pngImg.isTemplate = true
+        menuBarImage = pngImg
     }
 
     // 排下次提醒 达标后按节奏倍数放缓 面板倒计时同步

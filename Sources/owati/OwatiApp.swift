@@ -47,6 +47,7 @@ struct OwatiApp: App {
             PanelView()
         } label: {
             Image(nsImage: ui.menuBarImage)
+                .renderingMode(.template) // 自绘位图不吃isTemplate 强制模板渲染 深浅栏自适应
         }
         .menuBarExtraStyle(.window) // 面板模式 不是菜单模式
     }

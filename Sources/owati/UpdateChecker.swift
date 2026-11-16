@@ -2,17 +2,32 @@ import AppKit
 import SwiftUI
 import Foundation
 
-// MARK: 应用自更新 检查/下载/安装 HealthTick同款流程
+// MARK: 应用自更新 检查/下载/安装
 // 发布物: GitHub Releases 的 owati-<版本>-<架构>.dmg (package.sh+Actions产出)
 
 let appVersion: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
 let updaterRepo = "RookieOHY/owati"
 
-// uname 识别机器架构 选对应安装包
+// 自证架构: 读自身可执行的Mach-O头cputype(64位魔数0xfeedfacf 0x0100000C=arm64 0x01000007=x86_64)
+// 自己是什么架构就只能装什么架构的更新
 var machineArch: String {
+    if let exe = Bundle.main.executableURL,
+       let handle = try? FileHandle(forReadingFrom: exe) {
+        let header = (try? handle.read(upToCount: 8)) ?? Data()
+        try? handle.close()
+        if header.count >= 8 {
+            let magic = header.withUnsafeBytes { $0.load(as: UInt32.self) }
+            let cpu = header.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt32.self) }
+            if magic == 0xfeedfacf {
+                if cpu == 0x0100000C { return "aarch64" }
+                if cpu == 0x01000007 { return "x86_64" }
+            }
+        }
+    }
+    // 头读不到时退回uname
     var sysinfo = utsname()
     uname(&sysinfo)
-    let machine = withUnsafePointer(to: &sysinfo) {
+    let machine = withUnsafePointer(to: &sysinfo.machine) {
         $0.withMemoryRebound(to: CChar.self, capacity: 1) { String(cString: $0) }
     }
     return machine.hasPrefix("arm64") ? "aarch64" : "x86_64"
@@ -68,38 +83,32 @@ final class UpdateChecker: ObservableObject {
     }
 
     private func checkForUpdates() async {
-        guard let url = URL(string: "https://api.github.com/repos/\(updaterRepo)/releases/latest") else { return }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 10
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            PanelState.shared.updateStatus = "暂时检查不了 稍后再试"
-            checkError = "网络错误"
-            return
+        // 系统网络优先 出口IP被限流(403)或失败时绕代理直连 最后退到Atom订阅源
+        var tag: String?
+        var notes = ""
+        var assetSize: Int64 = 0
+
+        if let r = await fetchViaAPI(bypassProxy: false) {
+            tag = r.tag; notes = r.notes; assetSize = r.size
+        } else if let r = await fetchViaAPI(bypassProxy: true) {
+            tag = r.tag; notes = r.notes; assetSize = r.size
+        } else if let r = await fetchViaAtom() {
+            tag = r
         }
-        guard let tag = obj["tag_name"] as? String else {
+
+        guard let tag else {
             PanelState.shared.updateStatus = "暂时检查不了 稍后再试"
+            checkError = "GitHub接口连不上(代理出口IP可能被限流)"
             return
         }
         latestVersion = tag
-        releaseNotes = obj["body"] as? String ?? ""
-
-        // 架构匹配的安装包资产
-        let dmgName = "owati-\(tag)-\(machineArch).dmg"
-        var assetSize: Int64 = 0
-        if let assets = obj["assets"] as? [[String: Any]],
-           let asset = assets.first(where: { ($0["name"] as? String) == dmgName }),
-           let size = asset["size"] as? Int64 ?? (asset["size"] as? Int).map({ Int64($0) }) {
-            assetSize = size
-        }
+        releaseNotes = notes
         totalBytes = assetSize
 
         // 与本地版本比对
         if isNewerVersion(tag, than: appVersion) {
             hasUpdate = true
             PanelState.shared.updateStatus = "发现新版本 \(tag) 在更新窗口下载"
-            releaseNotes = obj["body"] as? String ?? releaseNotes ?? ""
             UpdateWindow.show()
         } else {
             hasUpdate = false
@@ -107,17 +116,69 @@ final class UpdateChecker: ObservableObject {
         }
     }
 
+    // API返回(tag,说明,安装包体积) 三元组 任一环失败即nil 交由下一路兜底
+    private func fetchViaAPI(bypassProxy: Bool) async -> (tag: String, notes: String, size: Int64)? {
+        guard let url = URL(string: "https://api.github.com/repos/\(updaterRepo)/releases/latest") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let cfg = URLSessionConfiguration.ephemeral
+        if bypassProxy { cfg.connectionProxyDictionary = [:] }
+        let session = URLSession(configuration: cfg)
+        defer { session.finishTasksAndInvalidate() }
+        guard let (data, resp) = try? await session.data(for: request),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tag = obj["tag_name"] as? String else { return nil }
+        let notes = obj["body"] as? String ?? ""
+        // 架构匹配的安装包资产 tag自带v 资产名不带
+        var size: Int64 = 0
+        let verClean = tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+        let dmgName = "owati-\(verClean)-\(machineArch).dmg"
+        if let assets = obj["assets"] as? [[String: Any]],
+           let asset = assets.first(where: { ($0["name"] as? String) == dmgName }) {
+            size = (asset["size"] as? Int64) ?? Int64(asset["size"] as? Int ?? 0)
+        }
+        return (tag, notes, size)
+    }
+
+    // Atom订阅源 走github.com域名 不占api.github.com的IP限流额度
+    private func fetchViaAtom() async -> String? {
+        guard let url = URL(string: "https://github.com/\(updaterRepo)/releases.atom") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        guard let (data, resp) = try? await session.data(for: request),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let xml = String(data: data, encoding: .utf8) else { return nil }
+        // 第一个entry即最新版 id末段就是tag 如 tag:github.com,2008:Repository/xxx/v0.1.4
+        for chunk in xml.components(separatedBy: "<entry>").dropFirst() {
+            guard let afterId = chunk.components(separatedBy: "<id>")[1...].first,
+                  let id = afterId.components(separatedBy: "</id>").first else { continue }
+            if let last = id.components(separatedBy: "/").last, last.hasPrefix("v") {
+                return last
+            }
+        }
+        return nil
+    }
+
     // MARK: 下载
 
     func downloadUpdate() {
-        guard hasUpdate, let ver = latestVersion, !isDownloading else { return }
+        guard hasUpdate, let rawVer = latestVersion, !isDownloading else { return }
+        // tag自带v 去掉再拼资产名与下载路径
+        let ver = rawVer.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+        guard !ver.isEmpty else { return }
         let dmgName = "owati-\(ver)-\(machineArch).dmg"
         guard let url = URL(string: "https://github.com/\(updaterRepo)/releases/download/v\(ver)/\(dmgName)") else { return }
+        PanelState.shared.updateStatus = "下载 \(dmgName)"
         isDownloading = true
         downloadDone = false
         downloadProgress = 0
 
         let delegate = UpdateDownloadDelegate(
+            expectedSize: totalBytes,
             onProgress: { [weak self] progress, received, total in
                 Task { @MainActor in
                     self?.downloadProgress = progress
@@ -131,11 +192,7 @@ final class UpdateChecker: ObservableObject {
                     self?.downloadSession = nil
                     self?.isDownloading = false
                     self?.downloadDone = true
-                    // 移到稳定路径 delegate的临时文件会被清
-                    let dest = URL(fileURLWithPath: NSTemporaryDirectory() + "owati-update.dmg")
-                    try? FileManager.default.removeItem(at: dest)
-                    try? FileManager.default.copyItem(at: fileURL, to: dest)
-                    self?.downloadedFileURL = dest
+                    self?.downloadedFileURL = fileURL
                 }
             },
             onError: { [weak self] message in
@@ -169,7 +226,7 @@ final class UpdateChecker: ObservableObject {
 
     // MARK: 安装
 
-    // HealthTick同款 独立bash进程完成替换 运行中的app不能覆盖自己
+    // 独立bash进程完成替换 本体立即退场 由脚本拉起新版
     func installAndRestart() {
         guard downloadDone, let fileURL = downloadedFileURL else { return }
         let destApp = Bundle.main.bundlePath
@@ -181,6 +238,8 @@ final class UpdateChecker: ObservableObject {
             }
             return
         }
+        // 安装包架构必须和本机一致 跑不起来的包绝不能替换掉能跑的
+        let wantArch = machineArch == "aarch64" ? "arm64" : "x86_64"
         isInstalling = true
 
         let script = """
@@ -188,47 +247,70 @@ final class UpdateChecker: ObservableObject {
         DMG_PATH="\(fileURL.path)"
         DEST_APP="\(destApp)"
 
-        MOUNT=$(hdiutil attach "$DMG_PATH" -nobrowse -noverify 2>/dev/null | grep -o '/Volumes/[^\t]*' | head -1)
-        if [ -z "$MOUNT" ]; then
+        MOUNT_POINT=$(hdiutil attach "$DMG_PATH" -nobrowse -noverify 2>/dev/null | grep -o '/Volumes/[^\t]*' | head -1)
+
+        if [ -z "$MOUNT_POINT" ]; then
             open "$DMG_PATH"
             exit 1
         fi
-        SOURCE_APP="$MOUNT/owati.app"
+
+        SOURCE_APP="$MOUNT_POINT/owati.app"
+
         if [ ! -d "$SOURCE_APP" ]; then
-            hdiutil detach "$MOUNT" -quiet 2>/dev/null
+            hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null
             open "$DMG_PATH"
             exit 1
         fi
+
+        # 架构校验 不含本机架构就放弃自动替换 改开DMG手动处理
+        if ! /usr/bin/lipo -archs "$SOURCE_APP/Contents/MacOS/owati" 2>/dev/null | /usr/bin/grep -qw "\(wantArch)"; then
+            hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null
+            open "$DMG_PATH"
+            exit 1
+        fi
+
         sleep 2
-        pkill -x owati 2>/dev/null
+
         rm -rf "$DEST_APP"
         cp -R "$SOURCE_APP" "$DEST_APP"
-        hdiutil detach "$MOUNT" -quiet 2>/dev/null
-        # 清理下载标记 防Gatekeeper拦截
-        xattr -dr com.apple.quarantine "$DEST_APP" 2>/dev/null
+        hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null
         open "$DEST_APP"
         rm -f "$0"
         """
-        let scriptPath = NSTemporaryDirectory() + "owati_update.sh"
-        try? script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [scriptPath]
-        try? process.run()
-        // 脚本会 pkill 旧实例并启动新 app 本体随后自然结束
+
+        do {
+            let scriptPath = NSTemporaryDirectory() + "owati_update.sh"
+            try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/bash")
+            process.arguments = [scriptPath]
+            try process.run()
+
+            // 本体马上退场 脚本sleep后替换并启动新版
+            NSApp.terminate(nil)
+        } catch {
+            // 脚本没跑起来 兜底打开DMG手动拖
+            NSWorkspace.shared.open(fileURL)
+            isInstalling = false
+        }
     }
 }
 
 // MARK: 下载代理 进度回调+临时文件搬运
 
 final class UpdateDownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    // 检查阶段从API拿到的安装包标称体积 拿来核对下载物 拦下拿错的包
+    let expectedSize: Int64
     let onProgress: (Double, Int64, Int64) -> Void
     let onComplete: (URL) -> Void
     let onError: (String) -> Void
 
-    init(onProgress: @escaping (Double, Int64, Int64) -> Void,
+    init(expectedSize: Int64,
+         onProgress: @escaping (Double, Int64, Int64) -> Void,
          onComplete: @escaping (URL) -> Void,
          onError: @escaping (String) -> Void) {
+        self.expectedSize = expectedSize
         self.onProgress = onProgress
         self.onComplete = onComplete
         self.onError = onError
@@ -243,10 +325,39 @@ final class UpdateDownloadDelegate: NSObject, URLSessionDownloadDelegate {
         onProgress(min(1, progress), totalBytesWritten, total)
     }
 
-    // 完成后把临时文件搬到稳定路径
+    // 完成回调里当场移走临时文件 回调返回后系统即回收该文件
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
-        onComplete(location)
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("owati-update.dmg")
+        try? FileManager.default.removeItem(at: dest)
+        do {
+            try FileManager.default.moveItem(at: location, to: dest)
+        } catch {
+            do {
+                try FileManager.default.copyItem(at: location, to: dest)
+            } catch {
+                onError("安装包保存失败")
+                return
+            }
+        }
+        // 断流截断的残包挡在安装之前 和服务器报的长度对不上就作废
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: dest.path),
+           let fileSize = attrs[.size] as? Int64 {
+            if let response = downloadTask.response as? HTTPURLResponse,
+               response.expectedContentLength > 0,
+               fileSize != response.expectedContentLength {
+                try? FileManager.default.removeItem(at: dest)
+                onError("下载不完整 请重试")
+                return
+            }
+            // 与API标称体积核对 拿错包(如x86_64)在这里拦下
+            if expectedSize > 0, fileSize != expectedSize {
+                try? FileManager.default.removeItem(at: dest)
+                onError("下载到的安装包不对 请重试")
+                return
+            }
+        }
+        onComplete(dest)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -340,7 +451,8 @@ struct UpdateDialogView: View {
                     .font(.system(size: 11))
                     .foregroundColor(.red)
             }
-            // 按钮区
+            // 按钮区 安装中收起防误点
+            if !checker.isInstalling {
             HStack(spacing: 10) {
                 Spacer()
                 Button {
@@ -387,6 +499,7 @@ struct UpdateDialogView: View {
                 }
             }
             .padding(.top, 2)
+            }
         }
         .padding(20)
         .frame(width: 440)
