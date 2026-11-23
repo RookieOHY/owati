@@ -29,7 +29,7 @@ extension PanelView {
             Button {
                 state.showDetail.toggle()
                 // 布局要跳变 清掉悬停 免得水滴tooltip在光标下被扫出来
-                state.setHover(nil)
+                WeekHover.shared.set(nil)
                 state.hoverRow = nil
             } label: {
                 HStack(spacing: 6) {

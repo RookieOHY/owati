@@ -19,6 +19,11 @@ enum AchievementWindow {
             w.setFrameAutosaveName("owatiAchievements")
             w.contentView = NSHostingView(rootView: AchievementView())
             window = w
+            // 关窗即暂停陈列室动画 一枚奖章一个15fps节拍改成全馆单节拍后再加这道闸
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: w, queue: .main) { _ in
+                    Task { @MainActor in PanelState.shared.achvLive = false }
+                }
         }
         if let w = window {
             if w.isMiniaturized { w.deminiaturize(nil) }
@@ -26,6 +31,7 @@ enum AchievementWindow {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
             PanelState.shared.openAchievementRoom()   // 快照新货 消底栏蓝点
+            PanelState.shared.achvLive = true
             w.orderFrontRegardless()
             w.makeKeyAndOrderFront(nil)
         }
@@ -189,6 +195,7 @@ struct AchievementView: View {
             }
             .padding(.leading, 10)
             // 展柜卡 分页式 固定7个一页 翻页代替滚动 右侧不再截半
+            // 悬浮呼吸走CA直驱repeatForever 逐帧零CPU 关窗即静
             VStack(spacing: 6) {
                 HStack(spacing: 0) {
                     ForEach(0..<7, id: \.self) { slot in
@@ -356,12 +363,16 @@ struct AchievementView: View {
         .zIndex(hovered ? 3 : 1)
     }
 
-    // 陈列台上的奖章悬浮呼吸 4秒一周期 相位按序号错开不开全齐步
+    // 陈列台上的奖章悬浮 4秒一周期 相位按序号错开
+    // 默认静帧: 展柜整窗重栅极贵(实测开着≈36%+) panelAnim开才播悬浮
+    @ViewBuilder
     func floatingMedal(_ b: Badge, size: CGFloat, phase: Double) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 15)) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate / 4.0 * 2 * .pi
+        if state.achvLive && AppConfig.shared.panelAnim {
+            FloatLoop(live: true, phase: phase) {
+                medallion(b, got: true, size: size, progress: 1)
+            }
+        } else {
             medallion(b, got: true, size: size, progress: 1)
-                .offset(y: 1.5 * sin(t + phase))
         }
     }
 
@@ -1071,5 +1082,20 @@ extension StickerWall {
         default:
             EmptyView()
         }
+    }
+}
+
+// 悬浮循环效果 CA直驱: 开窗(achvLive翻转)触发一次 repeatForever由渲染服务接管 逐帧零CPU
+// 不用@State宏(本环境不可用) live=false(窗关闭)时无动画 静止悬挂
+struct FloatLoop<Content: View>: View {
+    var live: Bool
+    var phase: Double
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            .offset(y: live ? -1.5 : 1.5)
+            .animation(live ? .easeInOut(duration: 2.0).repeatForever(autoreverses: true)
+                                .delay((phase / (2 * .pi)) * 4.0) : nil, value: live)
     }
 }

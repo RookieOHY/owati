@@ -131,6 +131,10 @@ final class AppConfig: ObservableObject {
             onChange?(.menuDisplay)
         }
     }
+    // 面板水波+logo呼吸动画 默认关: 逐帧CoreAnimation提交费电(实测面板开着≈12%CPU) 关后≈0
+    @Published var panelAnim: Bool {
+        didSet { ud.set(panelAnim, forKey: "panelAnim") }
+    }
     // 会议应用在前台自动暂停提醒
     @Published var meetingPause: Bool {
         didSet { ud.set(meetingPause, forKey: "meetingPause") }
@@ -178,6 +182,7 @@ final class AppConfig: ObservableObject {
         wallStyle = d.object(forKey: "wallStyle") as? Int ?? 0
         menuRing = d.object(forKey: "menuRing") as? Bool ?? true
         menuCountdown = d.object(forKey: "menuCountdown") as? Bool ?? true
+        panelAnim = d.object(forKey: "panelAnim") as? Bool ?? false
         stickerHidden = (d.object(forKey: "stickerHidden") as? [String]) ?? []
         meetingPause = d.object(forKey: "meetingPause") as? Bool ?? true
         achvSeen = Set(d.stringArray(forKey: "achvSeen") ?? [])
@@ -244,6 +249,7 @@ final class AppConfig: ObservableObject {
         if let v = d["bottleML"] as? Int { bottleML = v }
         if let v = d["menuRing"] as? Bool { menuRing = v }
         if let v = d["menuCountdown"] as? Bool { menuCountdown = v }
+        if let v = d["panelAnim"] as? Bool { panelAnim = v }
         if let v = d["badgeDates"] as? [String: String] { badgeDates = v }
         if let v = d["stickerPos"] as? [String: String] { stickerPos = v }
         if let v = d["stickerHidden"] as? [String] { stickerHidden = v }

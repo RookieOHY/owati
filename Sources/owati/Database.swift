@@ -6,6 +6,9 @@ final class Database {
     static let shared = Database()
     private var db: OpaquePointer?
 
+    // 数据写入代号 每次写入+1 面板的每秒缓存据此失效重建
+    private(set) var dataEpoch = 0
+
     // sqlite3_bind_text 需要这个 拷贝传入的字符串
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -87,6 +90,7 @@ final class Database {
 
     // 记一笔
     func addDrink(_ ml: Int, type: DrinkType = .water) -> Int64 {
+        dataEpoch += 1
         let now = Self.tsFormat.string(from: Date())
         let today = Self.dayFormat.string(from: Date())
         let sql = "INSERT INTO drink_records (amount_ml, ts, date, drink_type) VALUES (?, ?, ?, ?)"
@@ -130,6 +134,7 @@ final class Database {
 
     // 设置当日目标 只写今天这个日期 明天起仍用默认值
     func setGoalOverride(date: String, ml: Int) {
+        dataEpoch += 1
         var stmt: OpaquePointer?
         let sql = "INSERT OR REPLACE INTO goal_overrides (date, goal_ml) VALUES (?, ?)"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -318,6 +323,7 @@ final class Database {
 
     // 改一条记录的量
     func updateDrink(id: Int64, ml: Int) {
+        dataEpoch += 1
         var stmt: OpaquePointer?
         let sql = "UPDATE drink_records SET amount_ml = ? WHERE id = ?"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -329,6 +335,7 @@ final class Database {
 
     // 删一条记录
     func deleteDrink(id: Int64) {
+        dataEpoch += 1
         var stmt: OpaquePointer?
         let sql = "DELETE FROM drink_records WHERE id = ?"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -339,6 +346,7 @@ final class Database {
 
     // 撤销删除 按原时间插回
     func restoreDrink(ts: Date, ml: Int, type: DrinkType = .water) -> Int64 {
+        dataEpoch += 1
         var stmt: OpaquePointer?
         let sql = "INSERT INTO drink_records (amount_ml, ts, date, drink_type) VALUES (?, ?, ?, ?)"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
@@ -489,6 +497,7 @@ final class Database {
 
     // 导入用 按原始时间原样插回
     func importRecord(ts: String, ml: Int, date: String, type: String) {
+        dataEpoch += 1
         var stmt: OpaquePointer?
         let sql = "INSERT INTO drink_records (amount_ml, ts, date, drink_type) VALUES (?, ?, ?, ?)"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -507,6 +516,7 @@ final class Database {
 
     // 重置数据 清空全部打卡记录与目标覆盖 并把WAL日志誊回主文件归零
     func clearAllRecords() {
+        dataEpoch += 1
         execute("DELETE FROM drink_records")
         execute("DELETE FROM goal_overrides")
         execute("PRAGMA wal_checkpoint(TRUNCATE)")

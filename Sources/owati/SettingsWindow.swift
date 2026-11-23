@@ -342,6 +342,11 @@ struct SettingsView: View {
                         switchToggle($cfg.menuCountdown)
                     }
                     Divider()
+                    settingsRow("drop.circle", .cyan, "动效（水波·呼吸·悬浮）",
+                        help: "面板水波流动、logo呼吸、成就页奖章悬浮。关闭后全部静态显示，CPU占用接近0。默认关闭。") {
+                        switchToggle($cfg.panelAnim)
+                    }
+                    Divider()
                     settingsRow("theatermasks", .purple, "揭幕窗帘",
                         help: "陈列室里未解锁徽章的剧院幕布效果。开启后悬停徽章会拉开窗帘揭晓进度；关闭则直接显示进度条。") {
                         switchToggle($cfg.achvCurtain)
@@ -527,6 +532,7 @@ struct SettingsView: View {
         cfg.bottleML = 500
         cfg.menuRing = true
         cfg.menuCountdown = true
+        cfg.panelAnim = false
         cfg.achvCurtain = false
     }
 

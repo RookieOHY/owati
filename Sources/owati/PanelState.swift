@@ -28,8 +28,6 @@ final class PanelState: ObservableObject {
     }
     @Published var unitIndex = 0          // 剩余 0 ml 1 L 2 升
     @Published var showCountdown = false  // 下次提醒 时刻 <-> 倒计时
-    @Published var hoverDay: Int? = nil   // 周水滴悬停的列序号
-    @Published var hoverConfirmed: Int? = nil // 过了延迟还悬停才亮tooltip 挡布局跳变时的瞬时误报
     @Published var hoverRow: Int64? = nil // 时间线悬停的记录id
     @Published var showDetail = false     // 今日详情 展开/收起
     @Published var editingId: Int64? = nil    // 正在改ml的记录id
@@ -59,6 +57,36 @@ final class PanelState: ObservableObject {
     private var statsFetchedAt = Date.distantPast
 
     // 取当日总量/目标 带缓存: 跨天或记录变化或超过5秒才真正查库
+    // 面板每秒求值用的数据快照 数据写入(dataEpoch)或跨天时才重建 其余时间零查询
+    struct PanelData {
+        var totalML: Double
+        var goal: Int
+        var weekCounts: [String: Int]
+        var weekTotals: [String: Int]
+        var lastDrink: String?
+    }
+    private var panelCachedDay = ""
+    private var panelCachedEpoch = -1
+    private var panelCachedData = PanelData(totalML: 0, goal: 0, weekCounts: [:], weekTotals: [:], lastDrink: nil)
+
+    func panelData() -> PanelData {
+        let day = Database.dayFormat.string(from: Date())
+        let epoch = Database.shared.dataEpoch
+        if day == panelCachedDay && epoch == panelCachedEpoch { return panelCachedData }
+        let cal = Calendar(identifier: .iso8601) // 周一为一周开始 与weekDrops同源
+        let weekStart = cal.dateInterval(of: .weekOfYear, for: Date())!.start
+        let days = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: weekStart) }
+        panelCachedData = PanelData(
+            totalML: Double(Database.shared.todayTotalML()),
+            goal: Database.shared.todayGoalOverride() ?? AppConfig.shared.dailyGoalML,
+            weekCounts: Database.shared.cupsByDate(dates: days.map { Database.dayFormat.string(from: $0) }),
+            weekTotals: Database.shared.mlByDate(dates: days.map { Database.dayFormat.string(from: $0) }),
+            lastDrink: Database.shared.lastDrinkText())
+        panelCachedDay = day
+        panelCachedEpoch = epoch
+        return panelCachedData
+    }
+
     func menuStats() -> (total: Int, goal: Int) {
         let now = Date()
         let day = Database.dayFormat.string(from: now)
@@ -82,6 +110,7 @@ final class PanelState: ObservableObject {
     @Published var previewing = false      // 预览中 真实提醒的跳过计数/排程不介入
     @Published var dataDone: String? = nil // 数据卡刚完成的项 按钮换绿勾2秒
     @Published var updateStatus = ""       // 关于页检查更新结果文案
+    @Published var achvLive = false        // 成就窗可见中 关闭时陈列室动画暂停省电
     @Published var statsHoverBar: Int? = nil   // 统计柱状图悬停列
     @Published var statsRange = 0         // 统计窗 0近7天 1近30天 卡片跟着切
     @Published var statsHoverCard: Int? = nil  // 统计指标卡悬停序号 驱动浮起动效
@@ -105,6 +134,7 @@ final class PanelState: ObservableObject {
     @Published var menuBarImage = NSImage(size: NSSize(width: 22, height: 22))  // 菜单栏动态图标 环+倒计时
     @Published var cardBreath = false           // 水滴呼吸动画驱动
     private var menuGlyph: NSImage?
+    private var lastRenderKey = ""   // 菜单图标内容指纹 没变就不重绘
     private var menuTimer: Timer?
     @Published var panelLive = false          // 面板窗口可见中 隐藏时暂停30fps动画时钟省CPU
     var skipStreak = 0                          // 连续跳过且没记录的次数 够2次换催促tips
@@ -135,7 +165,6 @@ final class PanelState: ObservableObject {
     private var afkCatchup = false              // 刚才因为离开跳过了 回来要补
     private let afkThreshold: TimeInterval = 300
 
-    private var hoverWork: DispatchWorkItem?
     private var undoToken = 0
     private var undoWork: DispatchWorkItem?
     private var jumpToken = 0
@@ -162,22 +191,6 @@ final class PanelState: ObservableObject {
         var last: Date?
     }
     let waveClock = WaveClock()
-
-    // 悬停防抖 0.25秒后才真正亮提示
-    func setHover(_ idx: Int?) {
-        hoverWork?.cancel()
-        hoverWork = nil
-        hoverDay = idx
-        if idx == nil {
-            hoverConfirmed = nil
-            return
-        }
-        let w = DispatchWorkItem { [weak self] in
-            self?.hoverConfirmed = self?.hoverDay
-        }
-        hoverWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
-    }
 
     // 波浪相位推进 逐帧调用 庆祝时奔腾
     func advanceWave(now: Date, celebrate: Bool) -> Double {
@@ -337,8 +350,8 @@ final class PanelState: ObservableObject {
     // MARK: 提醒引擎
     // 进程一起来就跑 与面板开不开无关
     func startRemindEngine() {
-        scheduleNext(from: Date())
         loadMenuGlyph()
+        scheduleNext(from: Date())
         renderMenuBar()
         startMenuBarTimer()
         remindTimer?.invalidate()
@@ -376,6 +389,11 @@ final class PanelState: ObservableObject {
             text = String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
         }
         let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        // 内容没变就复用上一张 跳过绘制+PNG编解码+SwiftUI标签更新(关倒计时时每秒重绘归零)
+        // glyph加载状态入指纹 防止加载完成前的那帧被锁死
+        let renderKey = "\(Int(progress * 1000))|\(text ?? "")|\(c.menuRing)|\(menuGlyph != nil)"
+        if renderKey == lastRenderKey { return }
+        lastRenderKey = renderKey
         let iconW: CGFloat = c.menuRing ? 26 : 22
         let w = iconW + (text != nil ? 6 + ceil((text! as NSString).size(withAttributes: [.font: font]).width) : 0)
         // lockFocus离屏只出1x位图 Retina菜单栏拉伸2倍必糊

@@ -6,11 +6,11 @@ struct PanelView: View {
     @ObservedObject var config = AppConfig.shared
     let db = Database.shared
 
-    // 今日已喝 真数据 来自SQLite
-    var consumedML: Double { Double(db.todayTotalML()) }
+    // 今日已喝 走面板快照缓存 写入或跨天才重查
+    var consumedML: Double { state.panelData().totalML }
 
     // 今日生效目标 当日覆盖优先 否则用全局默认
-    var todayGoal: Int { db.todayGoalOverride() ?? config.dailyGoalML }
+    var todayGoal: Int { state.panelData().goal }
 
     static let dayFormat: DateFormatter = {
         let f = DateFormatter()
@@ -48,23 +48,27 @@ struct PanelView: View {
     }()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1, paused: !state.panelLive)) { ctx in // 秒级时钟 驱动日期和倒计时 面板隐藏时暂停
-            let _ = state.checkGoal(consumedML: consumedML, goal: todayGoal)
-            VStack(spacing: 0) {
+        // 秒级节拍只包日期和下次提醒卡 面板写入靠drinkPulse信号刷新 数据不变时其余子树零更新
+        let data = state.panelData()
+        let _ = state.drinkPulse
+        VStack(spacing: 0) {
                 // 主页
                 ZStack {
                     VStack(spacing: 16) {
-                        // 左上角 logo呼吸灯 + 日期注脚
-                        HStack(alignment: .center, spacing: 8) {
-                            logoBreath
-                            Spacer()
-                            topRightDate(ctx.date)
+                        // 左上角 logo呼吸灯 + 日期注脚 日期独占秒级节拍
+                        TimelineView(.animation(minimumInterval: 1, paused: !state.panelLive)) { ctx in
+                            HStack(alignment: .center, spacing: 8) {
+                                logoBreath
+                                Spacer()
+                                topRightDate(ctx.date)
+                            }
                         }
                         // 圆环 + 环下三列数据
                         VStack(spacing: 12) {
                             WaveRing(progress: consumedML / Double(todayGoal),
                                      consumedML: consumedML, goalML: todayGoal,
-                                     celebrate: state.celebrate)
+                                     celebrate: state.celebrate,
+                                     anim: config.panelAnim)
                                 .contentShape(Circle())
                                 .onTapGesture { logDrink(config.cupML) }
                             // 快捷记录 三等分通栏 图标+毫升数
@@ -81,16 +85,19 @@ struct PanelView: View {
                             HStack(spacing: 0) {
                                 statCol("\(db.todayCups()) 杯", "杯数")
                                 statCol("\(db.streakDays(goalML: config.dailyGoalML)) 天", "连续")
-                                statCol(db.lastDrinkText() ?? "—", "距上次")
+                                statCol(state.panelData().lastDrink ?? "—", "距上次")
                             }
                             statusLine
                             weekDrops
                             todayDetail
                         }
-                        // 两张卡
+                        // 两张卡 下次提醒卡独占秒级节拍 达标检测挂它的tick上
                         HStack(spacing: 10) {
                             remainCard
-                            remindCard(ctx.date)
+                            TimelineView(.animation(minimumInterval: 1, paused: !state.panelLive)) { ctx in
+                                let _ = state.checkGoal(consumedML: consumedML, goal: todayGoal)
+                                remindCard(ctx.date)
+                            }
                         }
                         // 撤销条 有可撤销操作时出现
                         if state.undo != nil {
@@ -104,7 +111,7 @@ struct PanelView: View {
                     Divider().padding(.horizontal, 4)
                     HStack(spacing: 0) {
                         controlButton("统计", "chart.xyaxis.line", "1") {
-                            state.setHover(nil)
+                            WeekHover.shared.set(nil)
                             state.hoverRow = nil
                             // 先收面板再弹统计窗 面板挡不住视线 同设置窗
                             for w in NSApp.windows
@@ -114,7 +121,7 @@ struct PanelView: View {
                             StatsWindow.show()
                         }
                         controlButton("成就", "trophy", "2", dot: state.hasNewBadges) {
-                            state.setHover(nil)
+                            WeekHover.shared.set(nil)
                             state.hoverRow = nil
                             // 与设置同款 先收面板再弹窗 面板挡不住视线
                             for w in NSApp.windows
@@ -124,7 +131,7 @@ struct PanelView: View {
                             AchievementWindow.show()
                         }
                         controlButton("帮助", "questionmark.circle", "3") {
-                            state.setHover(nil)
+                            WeekHover.shared.set(nil)
                             state.hoverRow = nil
                             // 和设置同款 先收面板再弹帮助窗 面板挡不住视线
                             for w in NSApp.windows
@@ -134,7 +141,7 @@ struct PanelView: View {
                             HelpWindow.show()
                         }
                         controlButton("设置", "gear", "4") {
-                            state.setHover(nil)
+                            WeekHover.shared.set(nil)
                             state.hoverRow = nil
                             // HealthTick式 先收面板再弹设置窗 面板挡不住视线
                             for w in NSApp.windows
@@ -150,9 +157,7 @@ struct PanelView: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 16)
-            .padding(.bottom, 14)
-        }
-        // 宽度固定 高度随内容自动撑 定高会在内容变化时把上下裁掉
+            .padding(.bottom, 14)        // 宽度固定 高度随内容自动撑 定高会在内容变化时把上下裁掉
         .frame(width: 240)
         // 实测内容高度 变化时同步宿主窗口(MenuBarExtra只会撑大不会自己缩)
         .background(
@@ -338,21 +343,32 @@ struct PanelView: View {
 
     // 产品logo 呼吸灯 无色→蓝→无色 5秒一周期 MacBook呼吸灯同款节奏
     // 双层叠加: 底层常驻原色 顶层蓝色随呼吸盖上 颜色是真插值不是透明度闪
+    // panelAnim默认关: 单层静态logo 零逐帧CA提交
+    @ViewBuilder
     var logoBreath: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !state.panelLive)) { ctx in
-            let s = 0.5 + 0.5 * sin(ctx.date.timeIntervalSinceReferenceDate * 2 * .pi / 5.0)
-            ZStack {
-                if let logo = Self.productLogo {
-                    Image(nsImage: logo).foregroundColor(.primary)
-                    Image(nsImage: logo).foregroundColor(.accentColor.opacity(s))
-                } else {
-                    Image(systemName: "drop.fill").font(.system(size: 28)).foregroundColor(.primary)
-                    Image(systemName: "drop.fill").font(.system(size: 28)).foregroundColor(.accentColor.opacity(s))
+        if config.panelAnim {
+            TimelineView(.animation(minimumInterval: 1.0 / 15, paused: !state.panelLive)) { ctx in
+                let s = 0.5 + 0.5 * sin(ctx.date.timeIntervalSinceReferenceDate * 2 * .pi / 5.0)
+                ZStack {
+                    if let logo = Self.productLogo {
+                        Image(nsImage: logo).foregroundColor(.primary)
+                        Image(nsImage: logo).foregroundColor(.accentColor.opacity(s))
+                    } else {
+                        Image(systemName: "drop.fill").font(.system(size: 28)).foregroundColor(.primary)
+                        Image(systemName: "drop.fill").font(.system(size: 28)).foregroundColor(.accentColor.opacity(s))
+                    }
                 }
+                // 峰值辉光 + 微缩放
+                .shadow(color: .accentColor.opacity(0.5 * s), radius: 5)
+                .scaleEffect(1 + 0.05 * s)
             }
-            // 峰值辉光 + 微缩放
-            .shadow(color: .accentColor.opacity(0.5 * s), radius: 5)
-            .scaleEffect(1 + 0.05 * s)
+        } else {
+            // 静态logo 单层原色
+            if let logo = Self.productLogo {
+                Image(nsImage: logo).foregroundColor(.primary)
+            } else {
+                Image(systemName: "drop.fill").font(.system(size: 28)).foregroundColor(.primary)
+            }
         }
     }
 
@@ -510,7 +526,7 @@ struct PanelView: View {
             f.origin.y = topY - h
             w.setFrame(f, display: true)
             // 窗口一跳 视图会在光标底下扫过 主动清悬停防tooltip闪现/卡住
-            state.setHover(nil)
+            WeekHover.shared.set(nil)
             state.hoverRow = nil
             state.hoverGoal = false
             state.hoverBtn = nil
@@ -679,71 +695,10 @@ struct PanelView: View {
 
     // 本周水滴 一天一滴 滴内是当天杯数 滴下是几号 周一开头 悬停显示当天详情
     var weekDrops: some View {
-        let cal = Calendar(identifier: .iso8601) // 周一为一周开始
-        let weekStart = cal.dateInterval(of: .weekOfYear, for: Date())!.start
-        let days = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: weekStart) }
-        let counts = db.cupsByDate(dates: days.map { Database.dayFormat.string(from: $0) })
-        let totals = db.mlByDate(dates: days.map { Database.dayFormat.string(from: $0) })
-        return HStack(spacing: 5) {
-            ForEach(Array(days.enumerated()), id: \.offset) { pair in
-                let idx = pair.offset
-                let d = pair.element
-                let isToday = cal.isDateInToday(d)
-                let n = counts[Database.dayFormat.string(from: d), default: 0]
-                let ml = totals[Database.dayFormat.string(from: d), default: 0]
-                VStack(spacing: 4) {
-                    ZStack {
-                        Image(systemName: "drop.fill")
-                            .font(.system(size: 24))
-                            .foregroundStyle(isToday ? AnyShapeStyle(Color.accentColor)
-                                                      : AnyShapeStyle(Color.primary.opacity(0.12)))
-                        if n > 0 {
-                            Text("\(n)")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(isToday ? .white : .primary.opacity(0.6))
-                                .offset(y: 1.5)
-                        }
-                    }
-                    VStack(spacing: 2) {
-                        Text("\(Calendar.current.component(.day, from: d))")
-                            .font(.system(size: 9))
-                            .foregroundColor(isToday ? Color.accentColor : .secondary)
-                        // 今天的号下面一条小蓝线
-                        Capsule()
-                            .fill(isToday ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.clear))
-                            .frame(width: 8, height: 2)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .onHover { hovering in
-                    state.setHover(hovering ? idx : nil)
-                }
-                // 悬停小卡 浮在滴上方 靠边两列向内收 防探出面板
-                .overlay(alignment: .top) {
-                    if state.hoverConfirmed == idx {
-                        VStack(spacing: 2) {
-                            Text(Self.dayFormat.string(from: d))
-                                .fontWeight(.medium)
-                            Text(n > 0 ? "\(ml) ml · \(n) 杯" : "没有记录")
-                                .foregroundColor(.secondary)
-                        }
-                        .font(.system(size: 10))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(.primary.opacity(0.1)))
-                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-                        .fixedSize()
-                        .offset(x: idx == 0 ? 14 : (idx == 6 ? -14 : 0), y: -40)
-                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .bottom)))
-                        .zIndex(10)
-                    }
-                }
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: state.hoverConfirmed)
+        let data = state.panelData()
+        return WeekDropsRow(counts: data.weekCounts, totals: data.weekTotals)
     }
+
 
     // 左卡 剩余量 点击换单位 外圈进度=今日完成度 喝超了按0显示 不出负数
     // 达标后友好显示: 已达标 / 超额量 替代冷冰冰的 0
@@ -856,5 +811,104 @@ struct PanelView: View {
         }
         let s = max(0, Int(state.nextRemind.timeIntervalSince(now)))
         return String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
+    }
+}
+
+// 周水滴行 悬停态走独立模型订阅 悬停抖动只重排这一行 不牵动整面板重建
+struct WeekDropsRow: View {
+    @ObservedObject var hover = WeekHover.shared
+    let counts: [String: Int]
+    let totals: [String: Int]
+
+    // 本周水滴 一天一滴 滴内是当天杯数 滴下是几号 周一开头 悬停显示当天详情
+    var body: some View {
+        let cal = Calendar(identifier: .iso8601) // 周一为一周开始
+        let weekStart = cal.dateInterval(of: .weekOfYear, for: Date())!.start
+        let days = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: weekStart) }
+        let row = HStack(spacing: 5) {
+            ForEach(Array(days.enumerated()), id: \.offset) { pair in
+                let idx = pair.offset
+                let d = pair.element
+                let isToday = cal.isDateInToday(d)
+                let n = counts[Database.dayFormat.string(from: d), default: 0]
+                let ml = totals[Database.dayFormat.string(from: d), default: 0]
+                VStack(spacing: 4) {
+                    ZStack {
+                        Image(systemName: "drop.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(isToday ? AnyShapeStyle(Color.accentColor)
+                                                      : AnyShapeStyle(Color.primary.opacity(0.12)))
+                        if n > 0 {
+                            Text("\(n)")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(isToday ? .white : .primary.opacity(0.6))
+                                .offset(y: 1.5)
+                        }
+                    }
+                    VStack(spacing: 2) {
+                        Text("\(Calendar.current.component(.day, from: d))")
+                            .font(.system(size: 9))
+                            .foregroundColor(isToday ? Color.accentColor : .secondary)
+                        // 今天的号下面一条小蓝线
+                        Capsule()
+                            .fill(isToday ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.clear))
+                            .frame(width: 8, height: 2)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .onHover { hovering in
+                    hover.set(hovering ? idx : nil)
+                }
+                // 悬停小卡 浮在滴上方 靠边两列向内收 防探出面板
+                .overlay(alignment: .top) {
+                    if hover.confirmed == idx {
+                        VStack(spacing: 2) {
+                            Text(PanelView.dayFormat.string(from: d))
+                                .fontWeight(.medium)
+                            Text(n > 0 ? "\(ml) ml · \(n) 杯" : "没有记录")
+                                .foregroundColor(.secondary)
+                        }
+                        .font(.system(size: 10))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(.primary.opacity(0.1)))
+                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                        .fixedSize()
+                        .offset(x: idx == 0 ? 14 : (idx == 6 ? -14 : 0), y: -40)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .bottom)))
+                        .zIndex(10)
+                    }
+                }
+            }
+        }
+        return row.animation(.easeOut(duration: 0.15), value: hover.confirmed)
+    }
+}
+
+// 悬停防抖模型 0.25秒后才亮提示 从PanelState独立出来 悬停publish不再牵动全面板
+final class WeekHover: ObservableObject {
+    static let shared = WeekHover()
+
+    @Published var day: Int? = nil
+    @Published var confirmed: Int? = nil
+    private var work: DispatchWorkItem?
+
+    func set(_ idx: Int?) {
+        if day == idx { return }   // 同值不重复publish 防悬停区重装引发的自我触发循环
+        work?.cancel()
+        work = nil
+        day = idx
+        if idx == nil {
+            confirmed = nil
+            return
+        }
+        let w = DispatchWorkItem { [weak self] in
+            guard let self, self.confirmed != self.day else { return }
+            self.confirmed = self.day
+        }
+        work = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
     }
 }

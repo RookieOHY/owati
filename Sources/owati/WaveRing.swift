@@ -6,6 +6,7 @@ struct WaveRing: View {
     var consumedML: Double
     var goalML: Int
     var celebrate: Bool = false
+    var anim: Bool = false
 
     // 空态也留一点水位 "还没喝"也有画面
     private var waterLevel: Double { max(progress, 0.06) }
@@ -38,16 +39,15 @@ struct WaveRing: View {
             }
             .padding(3)
             // 波浪 双层 一深一浅错开动 相位累加 庆祝时奔腾
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !PanelState.shared.panelLive)) { ctx in
-                let p = PanelState.shared.advanceWave(now: ctx.date, celebrate: celebrate)
-                ZStack {
-                    WaveShape(level: waterLevel, phase: p + 1.3, amplitude: 4)
-                        .fill(.cyan.opacity(0.3))
-                    WaveShape(level: waterLevel, phase: p * 1.41 + 3.8, amplitude: 5.5)
-                        .fill(LinearGradient(colors: [.blue.opacity(0.7), .cyan.opacity(0.85)],
-                                             startPoint: .top, endPoint: .bottom))
+            // panelAnim关→静帧水位 不播动画(逐帧CA提交费电 实测面板开着≈12%CPU)
+            Group {
+                if anim {
+                    TimelineView(.animation(minimumInterval: celebrate ? 1.0 / 30 : 1.0 / 15, paused: !PanelState.shared.panelLive)) { ctx in
+                        waveLayers(PanelState.shared.advanceWave(now: ctx.date, celebrate: celebrate))
+                    }
+                } else {
+                    waveLayers(0)
                 }
-                .animation(.spring(duration: 0.9, bounce: 0.25), value: progress)
             }
             .clipShape(Circle())
             .padding(6)
@@ -68,6 +68,17 @@ struct WaveRing: View {
         // 达标微弹 整环轻弹一下
         .scaleEffect(celebrate ? 1.05 : 1)
         .animation(.spring(duration: 0.45, bounce: 0.45), value: celebrate)
+    }
+
+    @ViewBuilder private func waveLayers(_ p: Double) -> some View {
+        ZStack {
+            WaveShape(level: waterLevel, phase: p + 1.3, amplitude: 4)
+                .fill(.cyan.opacity(0.3))
+            WaveShape(level: waterLevel, phase: p * 1.41 + 3.8, amplitude: 5.5)
+                .fill(LinearGradient(colors: [.blue.opacity(0.7), .cyan.opacity(0.85)],
+                                     startPoint: .top, endPoint: .bottom))
+        }
+        .animation(.spring(duration: 0.9, bounce: 0.25), value: progress)
     }
 }
 
