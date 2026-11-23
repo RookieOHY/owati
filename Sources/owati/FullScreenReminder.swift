@@ -190,7 +190,7 @@ struct FullScreenReminderView: View {
                         .font(.system(size: 19, weight: .semibold))
                         .foregroundColor(.owAccent)
                 }
-                .onAppear { state.cardBreath = true }
+                .onAppear { if AppConfig.shared.panelAnim { state.cardBreath = true } }
                 // tips 带个小灯泡图标
                 HStack(spacing: 6) {
                     Image(systemName: "lightbulb")

@@ -83,8 +83,8 @@ struct PanelView: View {
                             }
                             // 三列数据
                             HStack(spacing: 0) {
-                                statCol("\(db.todayCups()) 杯", "杯数")
-                                statCol("\(db.streakDays(goalML: config.dailyGoalML)) 天", "连续")
+                                statCol("\(data.todayCups) 杯", "杯数")
+                                statCol("\(data.streak) 天", "连续")
                                 statCol(state.panelData().lastDrink ?? "—", "距上次")
                             }
                             statusLine
@@ -110,9 +110,9 @@ struct PanelView: View {
                 VStack(spacing: 14) {
                     Divider().padding(.horizontal, 4)
                     HStack(spacing: 0) {
-                        controlButton("统计", "chart.xyaxis.line", "1") {
+                        ControlButton(title: "统计", icon: "chart.xyaxis.line", key: "1") {
                             WeekHover.shared.set(nil)
-                            state.hoverRow = nil
+                            state.setRow(nil)
                             // 先收面板再弹统计窗 面板挡不住视线 同设置窗
                             for w in NSApp.windows
                             where !w.styleMask.contains(.titled) && w.frame.width <= 400 && w.frame.height > 80 {
@@ -120,9 +120,9 @@ struct PanelView: View {
                             }
                             StatsWindow.show()
                         }
-                        controlButton("成就", "trophy", "2", dot: state.hasNewBadges) {
+                        ControlButton(title: "成就", icon: "trophy", key: "2", dot: state.hasNewBadges) {
                             WeekHover.shared.set(nil)
-                            state.hoverRow = nil
+                            state.setRow(nil)
                             // 与设置同款 先收面板再弹窗 面板挡不住视线
                             for w in NSApp.windows
                             where !w.styleMask.contains(.titled) && w.frame.width <= 400 && w.frame.height > 80 {
@@ -130,9 +130,9 @@ struct PanelView: View {
                             }
                             AchievementWindow.show()
                         }
-                        controlButton("帮助", "questionmark.circle", "3") {
+                        ControlButton(title: "帮助", icon: "questionmark.circle", key: "3") {
                             WeekHover.shared.set(nil)
-                            state.hoverRow = nil
+                            state.setRow(nil)
                             // 和设置同款 先收面板再弹帮助窗 面板挡不住视线
                             for w in NSApp.windows
                             where !w.styleMask.contains(.titled) && w.frame.width <= 400 && w.frame.height > 80 {
@@ -140,9 +140,9 @@ struct PanelView: View {
                             }
                             HelpWindow.show()
                         }
-                        controlButton("设置", "gear", "4") {
+                        ControlButton(title: "设置", icon: "gear", key: "4") {
                             WeekHover.shared.set(nil)
-                            state.hoverRow = nil
+                            state.setRow(nil)
                             // HealthTick式 先收面板再弹设置窗 面板挡不住视线
                             for w in NSApp.windows
                             where !w.styleMask.contains(.titled) && w.frame.width <= 400 && w.frame.height > 80 {
@@ -150,7 +150,7 @@ struct PanelView: View {
                             }
                             SettingsWindow.show()
                         }
-                        controlButton("退出", "power", "q") { NSApp.terminate(nil) }
+                        ControlButton(title: "退出", icon: "power", key: "q") { NSApp.terminate(nil) }
                     }
                 }
                 .padding(.top, 16)
@@ -326,19 +326,7 @@ struct PanelView: View {
 
     // 分享按钮 右上角 打开今日成就卡片弹窗
     var shareBtn: some View {
-        Button {
-            ShareCardWindow.show()
-        } label: {
-            Image(systemName: "arrowshape.turn.up.right")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(state.hoverBtn == "分享" ? Color.accentColor : Color.secondary)
-                .frame(width: 20, height: 20)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { h in
-            state.hoverBtn = h ? "分享" : (state.hoverBtn == "分享" ? nil : state.hoverBtn)
-        }
+        ShareBtn()
     }
 
     // 产品logo 呼吸灯 无色→蓝→无色 5秒一周期 MacBook呼吸灯同款节奏
@@ -477,7 +465,7 @@ struct PanelView: View {
     // 快捷记录按钮 幽灵样式 细描边浅字 悬停才亮 不和大环抢戏
     // ml为nil时不显示数字（自定义按钮用） 三等分通栏 文字不换行
     func presetButton(_ icon: String, _ title: String, _ ml: Int?, id: String) -> some View {
-        Button {
+        PresetButton(icon: icon, id: id, label: ml.map { String($0) } ?? title) {
             if let ml {
                 logDrink(ml)
             } else {
@@ -485,30 +473,6 @@ struct PanelView: View {
                 state.editingCustom.toggle()
                 state.customText = ""
             }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .medium))
-                Text(ml.map { String($0) } ?? title)
-                    .font(.system(size: 12, weight: .medium))
-                    .monospacedDigit()
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .frame(height: 30)
-            .frame(maxWidth: .infinity)
-            .foregroundColor(state.hoverBtn == id ? .accentColor : .secondary)
-            .background(state.hoverBtn == id ? AnyShapeStyle(Color.accentColor.opacity(0.08)) : AnyShapeStyle(.clear),
-                        in: RoundedRectangle(cornerRadius: 9))
-            .overlay(
-                RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(state.hoverBtn == id ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.12),
-                                  lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { h in
-            state.hoverBtn = h ? id : (state.hoverBtn == id ? nil : state.hoverBtn)
         }
     }
 
@@ -527,42 +491,14 @@ struct PanelView: View {
             w.setFrame(f, display: true)
             // 窗口一跳 视图会在光标底下扫过 主动清悬停防tooltip闪现/卡住
             WeekHover.shared.set(nil)
-            state.hoverRow = nil
-            state.hoverGoal = false
-            state.hoverBtn = nil
+            state.setRow(nil)
+            state.setGoalHover(false)
+            PanelHover.shared.setBtn(nil)
             state.markLayoutJump()
         }
     }
 
     // 底栏按钮 图标+小字 active/悬停时点亮主题色 dot=右上角新货蓝点
-    func controlButton(_ title: String, _ icon: String, _ key: String, active: Bool = false, dot: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
-                Text(title)
-                    .font(.system(size: 9))
-            }
-            .frame(width: 36, height: 32)
-            .foregroundColor((active || state.hoverBtn == title) ? Color.accentColor : Color.primary.opacity(0.5))
-            .overlay(alignment: .topTrailing) {
-                if dot {
-                    Circle()
-                        .fill(Color.owAccent)
-                        .frame(width: 6, height: 6)
-                        .overlay(Circle().strokeBorder(.white.opacity(0.7)))
-                        .offset(x: 4, y: 0)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(KeyEquivalent(key.first!), modifiers: .command)
-        .onHover { hovering in
-            state.hoverBtn = hovering ? title : (state.hoverBtn == title ? nil : state.hoverBtn)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
     // 三列数据列 数值带单位+名词标签
     func statCol(_ value: String, _ label: String) -> some View {
         VStack(spacing: 3) {
@@ -579,7 +515,7 @@ struct PanelView: View {
 
     // 状态行 随进度换文案 图标点题
     var statusLine: some View {
-        let cups = db.todayCups()
+        let cups = state.panelData().todayCups
         let consumed = Int(consumedML)
         let goal = todayGoal
         return HStack(spacing: 5) {
@@ -593,7 +529,7 @@ struct PanelView: View {
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 11))
                     .foregroundColor(.accentColor)
-                Text("今日目标已达成，连续 \(db.streakDays(goalML: goal)) 天")
+                Text("今日目标已达成，连续 \(state.panelData().streak) 天")
                     .foregroundColor(.secondary)
             } else {
                 Image(systemName: "target")
@@ -633,7 +569,7 @@ struct PanelView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.accentColor)
                         .contentShape(Rectangle())
-                        .onHover { state.hoverGoal = $0 }
+                        .onHover { state.setGoalHover($0) }
                         .onTapGesture {
                             state.editingGoal = true
                             state.editingGoalText = "\(todayGoal)"
@@ -642,7 +578,7 @@ struct PanelView: View {
                     Text("今日目标")
                         .foregroundColor(.secondary)
                         .contentShape(Rectangle())
-                        .onHover { state.hoverGoal = $0 }
+                        .onHover { state.setGoalHover($0) }
                         .onTapGesture {
                             state.editingGoal = true
                             state.editingGoalText = "\(todayGoal)"
@@ -910,5 +846,110 @@ final class WeekHover: ObservableObject {
         }
         work = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
+    }
+}
+
+// 面板内悬停态(底栏/快捷/分享按钮) 独立模型 同值短路 悬停只重绘按钮本身 不牵动整面板
+final class PanelHover: ObservableObject {
+    static let shared = PanelHover()
+    @Published var btn: String? = nil
+    func setBtn(_ v: String?) {
+        if btn != v { btn = v }
+    }
+}
+
+// 底栏按钮
+struct ControlButton: View {
+    @ObservedObject var hover = PanelHover.shared
+    let title: String
+    let icon: String
+    let key: String
+    var dot = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                Text(title)
+                    .font(.system(size: 9))
+            }
+            .frame(width: 36, height: 32)
+            .foregroundColor(hover.btn == title ? Color.accentColor : Color.primary.opacity(0.5))
+            .overlay(alignment: .topTrailing) {
+                if dot {
+                    Circle()
+                        .fill(Color.owAccent)
+                        .frame(width: 6, height: 6)
+                        .overlay(Circle().strokeBorder(.white.opacity(0.7)))
+                        .offset(x: 4, y: 0)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(KeyEquivalent(key.first!), modifiers: .command)
+        .onHover { h in
+            hover.setBtn(h ? title : (hover.btn == title ? nil : hover.btn))
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// 快捷记录按钮 一杯/一瓶/自定义
+struct PresetButton: View {
+    @ObservedObject var hover = PanelHover.shared
+    let icon: String
+    let id: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .medium))
+                Text(label)
+                    .font(.system(size: 12, weight: .medium))
+                    .monospacedDigit()
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(height: 30)
+            .frame(maxWidth: .infinity)
+            .foregroundColor(hover.btn == id ? .accentColor : .secondary)
+            .background(hover.btn == id ? AnyShapeStyle(Color.accentColor.opacity(0.08)) : AnyShapeStyle(.clear),
+                        in: RoundedRectangle(cornerRadius: 9))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(hover.btn == id ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.12),
+                                  lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { h in
+            hover.setBtn(h ? id : (hover.btn == id ? nil : hover.btn))
+        }
+    }
+}
+
+// 分享按钮 右上角
+struct ShareBtn: View {
+    @ObservedObject var hover = PanelHover.shared
+
+    var body: some View {
+        Button {
+            ShareCardWindow.show()
+        } label: {
+            Image(systemName: "arrowshape.turn.up.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(hover.btn == "分享" ? Color.accentColor : Color.secondary)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in
+            hover.setBtn(h ? "分享" : (hover.btn == "分享" ? nil : hover.btn))
+        }
     }
 }

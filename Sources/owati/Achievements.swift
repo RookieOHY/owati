@@ -158,26 +158,23 @@ struct Badge: Identifiable {
     func displayCondition(got: Bool) -> String { hidden && !got ? "达成后揭晓" : condition }
 
     // 当前值 与target同口径 volume=ml overGoalDay=%
-    func currentValue(db: Database) -> Int {
+    func currentValue(db: Database) -> Int { currentValue(db.snapshot()) }
+
+    // 快照版 一次快照全馆共用 不再每徽章各自查库
+    func currentValue(_ snap: Database.Snapshot) -> Int {
         switch kind {
-        case .streak:
-            return db.streakDays(goalML: AppConfig.shared.dailyGoalML)
-        case .volume:
-            return db.totalAllML()
-        case .cups:
-            return db.totalCups()
-        case .firstLog:
-            return min(db.totalCups(), 1)
+        case .streak: return snap.streak
+        case .volume: return snap.totalAllML
+        case .cups: return snap.totalCups
+        case .firstLog: return min(snap.totalCups, 1)
         case .overGoalDay, .friday:
             // 一趟遍历同算两个条件 目标=当日覆盖否则全局默认 与统计窗口径一致
             let def = AppConfig.shared.dailyGoalML
-            let days = db.dayTotals()
-            let ov = db.goalOverrides(dates: days.map { $0.date })
             let cal = Calendar.current
             var best = 0
             var fridays = 0
-            for d in days {
-                let goal = ov[d.date] ?? def
+            for d in snap.dayTotals {
+                let goal = snap.goalOverrides[d.date] ?? def
                 guard goal > 0, d.ml > 0 else { continue }
                 best = max(best, d.ml * 100 / goal)
                 if let day = Database.dayFormat.date(from: d.date),
@@ -186,54 +183,43 @@ struct Badge: Identifiable {
                 }
             }
             return kind == .overGoalDay ? best : fridays
-        case .bigSip:
-            return db.maxSingleML()
-        case .earlyBird:
-            return min(db.dawnRecords(), 1)
-        case .nightOwl:
-            return min(db.nightRecords(), 1)
-        case .taster:
-            return db.typeCount()
-        case .coffee:
-            return db.cups(of: .coffee)
+        case .bigSip: return snap.maxSingleML
+        case .earlyBird: return min(snap.dawn, 1)
+        case .nightOwl: return min(snap.night, 1)
+        case .taster: return snap.typeCount
+        case .coffee: return snap.cupsByType[DrinkType.coffee.rawValue, default: 0]
         case .perfectWeek:
             // 自然周内七天全达标 有记录日才算 空日不可能达标
             let def = AppConfig.shared.dailyGoalML
-            let days = db.dayTotals()
-            let ov = db.goalOverrides(dates: days.map { $0.date })
             let cal = Calendar.current
             var weekMet: [Date: Int] = [:]
-            for d in days {
-                let goal = ov[d.date] ?? def
+            for d in snap.dayTotals {
+                let goal = snap.goalOverrides[d.date] ?? def
                 guard goal > 0, d.ml >= goal, let day = Database.dayFormat.date(from: d.date),
                       let wk = cal.dateInterval(of: .weekOfYear, for: day)?.start else { continue }
                 weekMet[wk, default: 0] += 1
             }
             return weekMet.values.contains(7) ? 1 : 0
-        case .daysCount:
-            return db.recordedDays()
-        case .cupDay:
-            return db.bestDayCups()
+        case .daysCount: return snap.recordedDays
+        case .cupDay: return snap.bestDayCups
         case .monthChallenge:
             // 本自然月达标天数 月切自动归零 只数当月
             let def = AppConfig.shared.dailyGoalML
-            let days = db.dayTotals()
-            let ov = db.goalOverrides(dates: days.map { $0.date })
             let monthPrefix = Database.dayFormat.string(from: Date()).prefix(7)
             var met = 0
-            for d in days where d.date.hasPrefix(monthPrefix) {
-                let goal = ov[d.date] ?? def
+            for d in snap.dayTotals where d.date.hasPrefix(monthPrefix) {
+                let goal = snap.goalOverrides[d.date] ?? def
                 if goal > 0, d.ml >= goal { met += 1 }
             }
             return met
-        case .midnight:
-            return min(db.midnightRecords(), 1)
+        case .midnight: return min(snap.midnight, 1)
         case .collector:
-            return Achievements.all.filter { $0.kind != .collector && $0.earned(db: db) }.count
+            return Achievements.all.filter { $0.kind != .collector && $0.earned(snap) }.count
         }
     }
 
-    func earned(db: Database) -> Bool { currentValue(db: db) >= goal }
+    func earned(db: Database) -> Bool { currentValue(db.snapshot()) >= goal }
+    func earned(_ snap: Database.Snapshot) -> Bool { currentValue(snap) >= goal }
 
     // 数字进度 current / target
     func progressText(_ cur: Int) -> String {
@@ -445,6 +431,7 @@ enum Achievements {
 
     // 已解锁id集合 评估与建档共用
     static func earnedIDs(db: Database) -> Set<String> {
-        Set(all.filter { $0.earned(db: db) }.map { $0.id })
+        let snap = db.snapshot()
+        return Set(all.filter { $0.earned(snap) }.map { $0.id })
     }
 }

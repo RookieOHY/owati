@@ -9,6 +9,56 @@ final class Database {
     // 数据写入代号 每次写入+1 面板的每秒缓存据此失效重建
     private(set) var dataEpoch = 0
 
+    // 数据聚合快照 dataEpoch失效 一次算清多处共用(徽章评估原先~100条SQL/次写入 收成~10条)
+    struct Snapshot {
+        var todayTotalML: Int
+        var todayGoal: Int?
+        var todayCups: Int
+        var streak: Int
+        var totalAllML: Int
+        var totalCups: Int
+        var maxSingleML: Int
+        var dawn: Int
+        var night: Int
+        var midnight: Int
+        var recordedDays: Int
+        var bestDayCups: Int
+        var typeCount: Int
+        var cupsByType: [String: Int]
+        var dayTotals: [(date: String, ml: Int)]
+        var goalOverrides: [String: Int]
+    }
+    private var snapEpoch = -1
+    private var snapCache: Snapshot?
+
+    func snapshot() -> Snapshot {
+        if let c = snapCache, snapEpoch == dataEpoch { return c }
+        let days = dayTotals()
+        let ov = goalOverrides(dates: days.map { $0.date })
+        var byType: [String: Int] = [:]
+        for t in DrinkType.allCases { byType[t.rawValue] = cups(of: t) }
+        let snap = Snapshot(
+            todayTotalML: todayTotalML(),
+            todayGoal: todayGoalOverride(),
+            todayCups: todayCups(),
+            streak: streakDays(goalML: AppConfig.shared.dailyGoalML),
+            totalAllML: totalAllML(),
+            totalCups: totalCups(),
+            maxSingleML: maxSingleML(),
+            dawn: dawnRecords(),
+            night: nightRecords(),
+            midnight: midnightRecords(),
+            recordedDays: recordedDays(),
+            bestDayCups: bestDayCups(),
+            typeCount: byType.values.filter { $0 > 0 }.count,
+            cupsByType: byType,
+            dayTotals: days,
+            goalOverrides: ov)
+        snapEpoch = dataEpoch
+        snapCache = snap
+        return snap
+    }
+
     // sqlite3_bind_text 需要这个 拷贝传入的字符串
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 

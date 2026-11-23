@@ -28,7 +28,6 @@ final class PanelState: ObservableObject {
     }
     @Published var unitIndex = 0          // 剩余 0 ml 1 L 2 升
     @Published var showCountdown = false  // 下次提醒 时刻 <-> 倒计时
-    @Published var hoverRow: Int64? = nil // 时间线悬停的记录id
     @Published var showDetail = false     // 今日详情 展开/收起
     @Published var editingId: Int64? = nil    // 正在改ml的记录id
     @Published var editingText = ""           // 编辑框当前内容
@@ -39,8 +38,6 @@ final class PanelState: ObservableObject {
     @Published var undoText = ""
     @Published var undoWiggle: Double = 0        // 撤销条出现时的轻摆角度
     @Published var dateMode = 0          // 右上角 0公历 1农历 2周五判断 点击循环
-    @Published var hoverGoal = false     // 悬停"今日目标" 显示数值提示
-    @Published var hoverBtn: String? = nil   // 底栏悬停的按钮名 悬停亮蓝
     @Published var editingGoal = false       // 正在改今日目标
     @Published var editingGoalText = ""
     @Published var editingCustom = false     // 正在自定义量记录
@@ -61,13 +58,15 @@ final class PanelState: ObservableObject {
     struct PanelData {
         var totalML: Double
         var goal: Int
+        var todayCups: Int
+        var streak: Int
         var weekCounts: [String: Int]
         var weekTotals: [String: Int]
         var lastDrink: String?
     }
     private var panelCachedDay = ""
     private var panelCachedEpoch = -1
-    private var panelCachedData = PanelData(totalML: 0, goal: 0, weekCounts: [:], weekTotals: [:], lastDrink: nil)
+    private var panelCachedData = PanelData(totalML: 0, goal: 0, todayCups: 0, streak: 0, weekCounts: [:], weekTotals: [:], lastDrink: nil)
 
     func panelData() -> PanelData {
         let day = Database.dayFormat.string(from: Date())
@@ -76,9 +75,12 @@ final class PanelState: ObservableObject {
         let cal = Calendar(identifier: .iso8601) // 周一为一周开始 与weekDrops同源
         let weekStart = cal.dateInterval(of: .weekOfYear, for: Date())!.start
         let days = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: weekStart) }
+        let snap = Database.shared.snapshot()
         panelCachedData = PanelData(
-            totalML: Double(Database.shared.todayTotalML()),
-            goal: Database.shared.todayGoalOverride() ?? AppConfig.shared.dailyGoalML,
+            totalML: Double(snap.todayTotalML),
+            goal: snap.todayGoal ?? AppConfig.shared.dailyGoalML,
+            todayCups: snap.todayCups,
+            streak: snap.streak,
             weekCounts: Database.shared.cupsByDate(dates: days.map { Database.dayFormat.string(from: $0) }),
             weekTotals: Database.shared.mlByDate(dates: days.map { Database.dayFormat.string(from: $0) }),
             lastDrink: Database.shared.lastDrinkText())
@@ -191,6 +193,18 @@ final class PanelState: ObservableObject {
         var last: Date?
     }
     let waveClock = WaveClock()
+
+    @Published var hoverRow: Int64? = nil // 时间线悬停的记录id
+    @Published var hoverGoal = false     // 悬停"今日目标" 显示数值提示
+    // 同值短路 防反复进出重建
+    func setGoalHover(_ v: Bool) {
+        if hoverGoal != v { hoverGoal = v }
+    }
+
+    // 时间线悬停 同值短路 行间移动只publish真正变化的
+    func setRow(_ v: Int64?) {
+        if hoverRow != v { hoverRow = v }
+    }
 
     // 波浪相位推进 逐帧调用 庆祝时奔腾
     func advanceWave(now: Date, celebrate: Bool) -> Double {
@@ -552,8 +566,9 @@ final class PanelState: ObservableObject {
             return
         }
         // 超额静音 达到阈值比例后今天彻底安静
-        let goal = Database.shared.todayGoalOverride() ?? AppConfig.shared.dailyGoalML
-        let total = Database.shared.todayTotalML()
+        let stats = menuStats()   // 走5秒TTL缓存 不再每tick查库
+        let goal = stats.goal
+        let total = stats.total
         let silence = AppConfig.shared.overGoalSilence
         if silence > 0 && goal > 0 && total * 100 >= goal * silence {
             scheduleNext(from: now)

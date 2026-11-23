@@ -162,7 +162,7 @@ extension PanelView {
         }
         .padding(.vertical, 2)
         .onHover { hovering in
-            state.hoverRow = hovering ? r.id : (state.hoverRow == r.id ? nil : state.hoverRow)
+            state.setRow(hovering ? r.id : (state.hoverRow == r.id ? nil : state.hoverRow))
         }
     }
 
