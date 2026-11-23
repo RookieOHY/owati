@@ -298,16 +298,21 @@ final class Database {
         queryInt("SELECT COUNT(*) FROM drink_records WHERE date = ?", [date])
     }
 
-    // 距最近一次喝水 文案化 没记录返回nil 超过一天也算没喝
-    func lastDrinkText() -> String? {
+    // 最近一次喝水的时间点 没记录返回nil
+    func lastDrinkDate() -> Date? {
         var stmt: OpaquePointer?
         let sql = "SELECT ts FROM drink_records ORDER BY ts DESC LIMIT 1"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_step(stmt) == SQLITE_ROW,
               let c = sqlite3_column_text(stmt, 0) else { return nil }
-        let ts = String(cString: c)
-        guard let date = Self.tsFormat.date(from: ts) else { return nil }
+        return Self.tsFormat.date(from: String(cString: c))
+    }
+
+    // 距最近一次喝水 文案化 按当下时刻现算(缓存里只能存时间点 存文案会定格过期)
+    // 没记录返回nil 超过一天也算没喝
+    static func lastDrinkText(_ date: Date?) -> String? {
+        guard let date else { return nil }
         let m = max(0, Int(Date().timeIntervalSince(date) / 60))
         if m < 1 { return "刚刚" }
         if m < 60 { return "\(m) 分" }

@@ -56,7 +56,7 @@ struct PanelView: View {
                 ZStack {
                     VStack(spacing: 16) {
                         // 左上角 logo呼吸灯 + 日期注脚 日期独占秒级节拍
-                        TimelineView(.animation(minimumInterval: 1, paused: !state.panelLive)) { ctx in
+                        TimelineView(.animation(minimumInterval: 1)) { ctx in // 文本节拍 不挂焦点(修复被注释吞掉的闭包) { ctx in
                             HStack(alignment: .center, spacing: 8) {
                                 logoBreath
                                 Spacer()
@@ -85,7 +85,9 @@ struct PanelView: View {
                             HStack(spacing: 0) {
                                 statCol("\(data.todayCups) 杯", "杯数")
                                 statCol("\(data.streak) 天", "连续")
-                                statCol(state.panelData().lastDrink ?? "—", "距上次")
+                                TimelineView(.animation(minimumInterval: 1)) { ctx in // 文本节拍 不挂焦点(修复被注释吞掉的闭包) { _ in
+                                    statCol(Database.lastDrinkText(state.panelData().lastDrinkDate) ?? "—", "距上次")
+                                }
                             }
                             statusLine
                             weekDrops
@@ -94,7 +96,7 @@ struct PanelView: View {
                         // 两张卡 下次提醒卡独占秒级节拍 达标检测挂它的tick上
                         HStack(spacing: 10) {
                             remainCard
-                            TimelineView(.animation(minimumInterval: 1, paused: !state.panelLive)) { ctx in
+                            TimelineView(.animation(minimumInterval: 1)) { ctx in // 文本节拍 不挂焦点(修复被注释吞掉的闭包) { ctx in
                                 let _ = state.checkGoal(consumedML: consumedML, goal: todayGoal)
                                 remindCard(ctx.date)
                             }

@@ -62,11 +62,11 @@ final class PanelState: ObservableObject {
         var streak: Int
         var weekCounts: [String: Int]
         var weekTotals: [String: Int]
-        var lastDrink: String?
+        var lastDrinkDate: Date?
     }
     private var panelCachedDay = ""
     private var panelCachedEpoch = -1
-    private var panelCachedData = PanelData(totalML: 0, goal: 0, todayCups: 0, streak: 0, weekCounts: [:], weekTotals: [:], lastDrink: nil)
+    private var panelCachedData = PanelData(totalML: 0, goal: 0, todayCups: 0, streak: 0, weekCounts: [:], weekTotals: [:], lastDrinkDate: nil)
 
     func panelData() -> PanelData {
         let day = Database.dayFormat.string(from: Date())
@@ -83,7 +83,7 @@ final class PanelState: ObservableObject {
             streak: snap.streak,
             weekCounts: Database.shared.cupsByDate(dates: days.map { Database.dayFormat.string(from: $0) }),
             weekTotals: Database.shared.mlByDate(dates: days.map { Database.dayFormat.string(from: $0) }),
-            lastDrink: Database.shared.lastDrinkText())
+            lastDrinkDate: Database.shared.lastDrinkDate())
         panelCachedDay = day
         panelCachedEpoch = epoch
         return panelCachedData

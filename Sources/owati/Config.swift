@@ -23,7 +23,10 @@ final class AppConfig: ObservableObject {
     }
     // 提醒间隔 分钟
     @Published var remindIntervalMin: Int {
-        didSet { ud.set(remindIntervalMin, forKey: "remindIntervalMin") }
+        didSet {
+            ud.set(remindIntervalMin, forKey: "remindIntervalMin")
+            onChange?(.goalInterval)   // 间隔变了立即按新值重排 不等当前倒计时走完
+        }
     }
     // 提醒日 1=周日 2=周一 ... 7=周六
     @Published var remindDays: Set<Int> {
